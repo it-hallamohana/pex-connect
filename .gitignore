@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env*
+!.env.example
+work/
+*.log
+supabase/.temp/
+supabase/.branches/
+*.pem
+*.key
