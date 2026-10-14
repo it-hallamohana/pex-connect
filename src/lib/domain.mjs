@@ -1,9 +1,9 @@
 export const statuses = {
-  pending: "Menunggu",
-  in_progress: "Dikerjakan",
-  resolved: "Terselesaikan",
-  closed: "Ditutup",
-  rejected: "Ditolak",
+  pending: "Open",
+  in_progress: "In Progress",
+  resolved: "Resolved",
+  closed: "Closed",
+  rejected: "Rejected",
 };
 export const priorities = {
   low: "Rendah",

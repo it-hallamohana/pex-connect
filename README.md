@@ -99,3 +99,13 @@ Belum ada deployment Railway yang dibuat dari sesi ini. Docker image disiapkan, 
 Fase 1 belum mencakup push notification/email operasional, SLA otomatis, ekspor laporan, atau multi-mall. Unggahan yang dibatalkan sebelum tiket tersimpan dapat menjadi file yatim; tidak ada penghapusan otomatis pada bucket produksi. Daftar tiket dimuat bertahap per 500 baris ke browser dan ditampilkan 12 per halaman; untuk volume sangat besar, pindahkan agregasi/filter ke server sebelum perluasan penggunaan.
 
 Referensi: [Supabase custom schemas](https://supabase.com/docs/guides/api/using-custom-schemas), [Supabase SSR](https://supabase.com/docs/guides/auth/server-side/creating-a-client), [Storage access control](https://supabase.com/docs/guides/storage/security/access-control).
+
+## Tampilan operasional sederhana
+
+Departemen dan pilihan judul request mengikuti referensi kode lokal FOXI Connect. Jalankan migrasi `supabase/migrations/20261014034925_mall_foxi_departments.sql` setelah migrasi registrasi. Migrasi hanya mengubah `mall.departments`, mempertahankan ID dan relasi lama, dan menonaktifkan CS/TR untuk pilihan baru. Nama/kode berasal dari referensi source, bukan query ke database hotel.
+
+Form menggunakan Guest Request / Internal Request, departemen tujuan, judul sesuai departemen (atau Lainnya), lantai/lokasi, deskripsi, foto, dan prioritas. Nilai jenis request disimpan dalam kolom kategori yang sudah tersedia.
+
+Label Open memakai nilai internal `pending` agar tiket dan RPC lama tetap kompatibel. Status selanjutnya In Progress, Resolved, Closed, dan Rejected. Dashboard menyediakan KPI yang dapat diklik, filter status, ringkasan departemen, daftar kartu di ponsel, dan tabel/papan di laptop. Data tetap dibatasi RLS: admin melihat semua; staf/supervisor melihat departemennya dan request yang dibuat sendiri. Jabatan tidak otomatis memberi akses lintas departemen.
+
+Tipografi utama 16px, teks pendukung umumnya 14px, kontrol minimal 44–48px, kontras lebih kuat. Navigasi bawah muncul di ponsel/tablet. Tidak ada perubahan kebijakan RLS, Auth hotel, bucket hotel, atau tabel di schema hotel.

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { departmentOptions } from "../src/lib/registration.mjs";
 import { PGlite } from "@electric-sql/pglite";
 
 test("registration, admin verification, department override, rejection/resubmission, member management and RLS", async () => {
@@ -25,6 +26,47 @@ test("registration, admin verification, department override, rejection/resubmiss
     assert.doesNotMatch(migration, /\bpublic\s*\./i);
     await db.exec(base);
     await db.exec(migration);
+    const beforeDepartments = (
+      await db.query("SELECT id,code FROM mall.departments ORDER BY code")
+    ).rows;
+    const departmentMigration = await readFile(
+      new URL(
+        "../supabase/migrations/20261014034925_mall_foxi_departments.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    assert.doesNotMatch(departmentMigration, /\bpublic\s*\./i);
+    await db.exec(departmentMigration);
+    await db.exec(departmentMigration);
+    assert.deepEqual(
+      (
+        await db.query(
+          "SELECT code,name FROM mall.departments WHERE is_active ORDER BY code",
+        )
+      ).rows,
+      departmentOptions
+        .map(([code, name]) => ({ code, name }))
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    );
+    for (const dept of beforeDepartments) {
+      assert.equal(
+        (
+          await db.query("SELECT id FROM mall.departments WHERE code=$1", [
+            dept.code,
+          ])
+        ).rows[0].id,
+        dept.id,
+      );
+    }
+    assert.equal(
+      (
+        await db.query(
+          "SELECT count(*)::int AS n FROM mall.departments WHERE code IN ('CS','TR') AND NOT is_active",
+        )
+      ).rows[0].n,
+      2,
+    );
     const ids = Array.from(
       { length: 5 },
       (_, i) => `10000000-0000-4000-a000-${String(i + 1).padStart(12, "0")}`,

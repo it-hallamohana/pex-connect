@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowUpRight,
-  Building2,
   ShieldCheck,
   Eye,
   EyeOff,
@@ -52,42 +51,11 @@ export default function Login() {
             <small>PEKANBARU XCHANGE</small>
           </span>
         </a>
-        <div className="story-copy">
-          <div className="eyebrow">
-            <span className="tiny-line" /> ONE MALL. ONE CONNECTED TEAM.
-          </div>
-          <h1>
-            Operasional lebih
-            <br />
-            terarah.
-            <br />
-            <span>Pengalaman lebih baik.</span>
-          </h1>
-          <p>
-            Setiap laporan, setiap tindak lanjut, setiap hari.
-            <br />
-            Bersama menjaga Pekanbaru XChange.
-          </p>
-        </div>
-        <div className="mall-art" aria-hidden="true">
-          <div className="art-ring" />
-          <div className="building b1" />
-          <div className="building b2" />
-          <div className="building b3" />
-          <div className="art-label">
-            PEKANBARU <strong>XCHANGE</strong>
-          </div>
-        </div>
-        <div className="story-footer">
-          <Building2 size={16} /> Pusat koordinasi operasional mall{" "}
-          <span>EST. 2026</span>
-        </div>
       </section>
       <section className="login-panel">
         <div className="login-box">
-          <div className="eyebrow teal">PORTAL OPERASIONAL</div>
-          <h2>Selamat datang kembali.</h2>
-          <p>Masuk untuk mulai mengelola operasional Anda.</p>
+          <h2>Masuk</h2>
+          <p>Portal operasional Pekanbaru XChange.</p>
           <form onSubmit={login}>
             <label>
               Email kerja

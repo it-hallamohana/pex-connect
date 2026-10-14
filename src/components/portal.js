@@ -12,7 +12,6 @@ import {
   Clock3,
   CheckCheck,
   Activity,
-  SlidersHorizontal,
   LayoutGrid,
   List,
   MapPin,
@@ -29,16 +28,17 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { requestTitles } from "@/lib/request-titles.mjs";
 import Account from "@/components/account";
 import Members from "@/components/members";
 import {
   statuses,
   priorities,
-  categories,
   locations,
   canManage,
   transitions,
   metrics,
+  jakartaDay,
 } from "@/lib/domain.mjs";
 const fmt = (value) =>
   new Intl.DateTimeFormat("id-ID", {
@@ -119,6 +119,11 @@ function PhotoInput({ name = "photo", required = false }) {
 function NewTicket({ departments, close, done }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [destination, setDestination] = useState("");
+  const [titleChoice, setTitleChoice] = useState("");
+  const titleOptions = requestTitles(
+    departments.find((d) => d.id === destination)?.code,
+  );
   const photoPath = useRef(null),
     photoFile = useRef(null);
   async function submit(e) {
@@ -138,9 +143,9 @@ function NewTicket({ departments, close, done }) {
         photoFile.current = `${file.name}:${file.size}:${file.lastModified}`;
       }
       const { error } = await createClient().rpc("create_request", {
-        p_title: f.get("title"),
+        p_title: titleChoice === "Lainnya" ? f.get("title") : titleChoice,
         p_description: f.get("description"),
-        p_category: f.get("category"),
+        p_category: f.get("request_type"),
         p_location: `${f.get("floor")} · ${f.get("location")}`,
         p_priority: f.get("priority"),
         p_department: f.get("department"),
@@ -157,46 +162,72 @@ function NewTicket({ departments, close, done }) {
   }
   return (
     <Modal
-      title="Buat tiket baru"
-      subtitle="Sampaikan kebutuhan Anda. Kami bantu tindak lanjuti."
+      title="Buat request baru"
+      subtitle="Isi kebutuhan dan kirim ke departemen tujuan."
       close={() => !busy && close()}
     >
       <form onSubmit={submit}>
         <label>
-          Judul laporan *
-          <input
-            name="title"
-            required
-            minLength={5}
-            maxLength={160}
-            placeholder="Contoh: AC tidak dingin di koridor timur"
-            autoFocus
-          />
+          Jenis request *
+          <select name="request_type" defaultValue="Guest Request">
+            <option>Guest Request</option>
+            <option>Internal Request</option>
+          </select>
         </label>
-        <div className="form-grid">
-          <label>
-            Kategori *
-            <select name="category">
-              {categories.map((c) => (
-                <option key={c}>{c}</option>
+        <label>
+          Departemen tujuan *
+          <select
+            name="department"
+            required
+            value={destination}
+            onChange={(e) => {
+              setDestination(e.target.value);
+              setTitleChoice("");
+            }}
+          >
+            <option value="" disabled>
+              Pilih departemen
+            </option>
+            {departments
+              .filter((d) => d.is_active)
+              .map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
               ))}
-            </select>
-          </label>
+          </select>
+        </label>
+        <label>
+          Judul request *
+          <select
+            required
+            disabled={!destination}
+            value={titleChoice}
+            onChange={(e) => setTitleChoice(e.target.value)}
+          >
+            <option value="" disabled>
+              {destination
+                ? "Pilih kebutuhan"
+                : "Pilih departemen terlebih dahulu"}
+            </option>
+            {titleOptions.map((title) => (
+              <option key={title}>{title}</option>
+            ))}
+          </select>
+        </label>
+        {titleChoice === "Lainnya" && (
           <label>
-            Departemen tujuan *
-            <select name="department" required defaultValue="">
-              <option value="" disabled>
-                Pilih departemen
-              </option>
-              {departments
-                .filter((d) => d.is_active)
-                .map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-            </select>
+            Judul lainnya *
+            <input
+              name="title"
+              required
+              minLength={5}
+              maxLength={160}
+              placeholder="Tuliskan kebutuhan Anda"
+            />
           </label>
+        )}
+        <div className="form-grid">
           <label>
             Lantai / area *
             <select name="floor">
@@ -226,7 +257,7 @@ function NewTicket({ departments, close, done }) {
           </select>
         </label>
         <label>
-          Deskripsi *
+          Deskripsi detail *
           <textarea
             name="description"
             rows={3}
@@ -257,7 +288,7 @@ function NewTicket({ departments, close, done }) {
             ) : (
               <Plus size={17} />
             )}{" "}
-            {busy ? "Menyimpan..." : "Kirim tiket"}
+            {busy ? "Menyimpan..." : "Kirim request"}
           </button>
         </div>
       </form>
@@ -386,6 +417,10 @@ function Detail({
       </div>
       <p className="detail-description">{current.description}</p>
       <div className="detail-facts">
+        <span>
+          <Ticket size={16} />
+          {current.category}
+        </span>
         <span>
           <MapPin size={16} />
           {current.location}
@@ -532,7 +567,14 @@ function Detail({
                   {people.find((p) => p.id === log.actor_id)?.full_name ||
                     "Pengguna Mall"}
                 </strong>
-                <p>{log.notes}</p>
+                <p>
+                  {log.action === "STATUS_CHANGED"
+                    ? log.notes.replace(
+                        /\b(pending|in_progress|resolved|closed|rejected)\b/g,
+                        (value) => statuses[value],
+                      )
+                    : log.notes}
+                </p>
                 <small>{fmt(log.created_at)} WIB</small>
               </div>
             </div>
@@ -578,6 +620,15 @@ export default function Portal({ profile }) {
     [mobile, setMobile] = useState(false),
     [revision, setRevision] = useState(0),
     [page, setPage] = useState(1);
+  useEffect(() => {
+    const screen = window.matchMedia("(max-width: 640px)");
+    const useMobileList = () => {
+      if (screen.matches) setView("table");
+    };
+    useMobileList();
+    screen.addEventListener("change", useMobileList);
+    return () => screen.removeEventListener("change", useMobileList);
+  }, []);
   const generation = useRef(0);
   const load = useCallback(async () => {
     const seq = ++generation.current;
@@ -663,7 +714,12 @@ export default function Portal({ profile }) {
     (t) =>
       (!department || t.department_id === department) &&
       (!floor || t.location.startsWith(floor)) &&
-      (!status || t.status === status) &&
+      (!status ||
+        (status === "today"
+          ? t.resolved_at &&
+            ["resolved", "closed"].includes(t.status) &&
+            jakartaDay(t.resolved_at) === jakartaDay()
+          : t.status === status)) &&
       `${t.title} ${t.ticket_number} ${t.location}`
         .toLowerCase()
         .includes(search.toLowerCase()),
@@ -681,14 +737,17 @@ export default function Portal({ profile }) {
     else window.location.assign("/login");
   }
   const items = [
-    ["overview", LayoutDashboard, "Ringkasan"],
-    ["tickets", Ticket, "Semua tiket"],
+    ["overview", LayoutDashboard, "Dashboard"],
+    ["tickets", Ticket, "Request"],
     ["departments", Building2, "Departemen"],
     ...(profile.role === "admin" ? [["members", ShieldCheck, "Pengguna"]] : []),
     ["account", UserRound, "Akun"],
   ];
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Langsung ke konten
+      </a>
       <aside className={`sidebar ${mobile ? "open" : ""}`}>
         <a className="brand" href="/dashboard">
           <span className="brand-icon">
@@ -699,17 +758,7 @@ export default function Portal({ profile }) {
             <small>PEKANBARU XCHANGE</small>
           </span>
         </a>
-        <div className="workspace">
-          <span className="workspace-icon">
-            <Building2 size={19} />
-          </span>
-          <div>
-            <strong>Pekanbaru XChange</strong>
-            <small>Mall Operations</small>
-          </div>
-          <ShieldCheck size={15} />
-        </div>
-        <div className="nav-caption">WORKSPACE</div>
+
         <nav>
           {items.map(([key, Icon, label]) => (
             <button
@@ -727,17 +776,6 @@ export default function Portal({ profile }) {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="help-card">
-            <span className="help-symbol">
-              <Activity size={19} />
-            </span>
-            <strong>Setiap detail berarti.</strong>
-            <p>Koordinasi yang baik dimulai dari satu laporan yang jelas.</p>
-            <button onClick={() => setNewTicket(true)}>
-              Buat laporan
-              <ArrowUpRight size={16} />
-            </button>
-          </div>
           <div className="user-card">
             <span className="avatar">
               {profile.full_name.slice(0, 2).toUpperCase()}
@@ -773,14 +811,14 @@ export default function Portal({ profile }) {
             >
               <Menu />
             </button>
-            <span>Workspace</span>
+            <span>P-Ex Connect</span>
             <ChevronRight size={14} />
             <strong>{items.find((i) => i[0] === section)?.[2]}</strong>
           </div>
           <div className="topbar-right">
             <span className={`live ${connected ? "online" : ""}`}>
               <i />
-              {connected ? "Realtime terhubung" : "Menghubungkan realtime"}
+              {connected ? "Terhubung" : "Sinkronisasi berkala"}
             </span>
             <span className="topbar-date">
               {new Intl.DateTimeFormat("id-ID", {
@@ -792,21 +830,10 @@ export default function Portal({ profile }) {
             </span>
           </div>
         </header>
-        <main className="dashboard">
+        <main className="dashboard" id="main-content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">PEKANBARU XCHANGE / OPERATIONS</div>
-              <h1>
-                {section === "overview"
-                  ? "Operasional dalam kendali."
-                  : section === "tickets"
-                    ? "Setiap laporan, ditindaklanjuti."
-                    : section === "members"
-                      ? "Tim yang tepat. Akses yang terarah."
-                      : section === "account"
-                        ? "Akses yang aman, kerja yang nyaman."
-                        : "Satu tim. Banyak peran."}
-              </h1>
+              <h1>{items.find((i) => i[0] === section)?.[2]}</h1>
               <p>
                 {section === "overview"
                   ? `Selamat bekerja, ${profile.full_name.split(" ")[0]}. Pantau dan koordinasikan kebutuhan mall hari ini.`
@@ -821,7 +848,7 @@ export default function Portal({ profile }) {
             </div>
             <button className="primary" onClick={() => setNewTicket(true)}>
               <Plus size={18} />
-              Buat tiket
+              Buat request
             </button>
           </div>
           {error && (
@@ -842,42 +869,44 @@ export default function Portal({ profile }) {
               </button>
             </div>
           )}
-          <section className="stats-grid">
-            {[
-              [
-                "Total tiket",
-                "Semua laporan yang dapat Anda akses",
-                Ticket,
-                "magenta",
-              ],
-              ["Menunggu", "Menanti tindak lanjut tim", Clock3, "orange"],
-              [
-                "Sedang dikerjakan",
-                "Dalam penanganan departemen",
-                Wrench,
-                "blue",
-              ],
-              [
-                "Selesai hari ini",
-                "Terselesaikan hari ini · WIB",
-                CheckCheck,
-                "teal",
-              ],
-            ].map(([label, caption, Icon, color], index) => (
-              <div className={`stat-card ${color}`} key={label}>
-                <div>
-                  <span>{label}</span>
-                  <span className="stat-icon">
-                    <Icon size={19} />
-                  </span>
-                </div>
-                <strong>
-                  {loading ? "—" : stats[index].toLocaleString("id-ID")}
-                </strong>
-                <small>{caption}</small>
-              </div>
-            ))}
-          </section>
+          {["overview", "tickets"].includes(section) && (
+            <section className="stats-grid">
+              {[
+                ["Total request", "Dalam akses Anda", Ticket, "magenta"],
+                ["Open", "Belum ditangani", Clock3, "orange"],
+                ["In Progress", "Sedang ditangani", Wrench, "blue"],
+                [
+                  "Selesai hari ini",
+                  "Terselesaikan hari ini · WIB",
+                  CheckCheck,
+                  "teal",
+                ],
+              ].map(([label, caption, Icon, color], index) => (
+                <button
+                  className={`stat-card ${color}`}
+                  key={label}
+                  onClick={() => {
+                    setSection("tickets");
+                    setStatus(["", "pending", "in_progress", "today"][index]);
+                    setDepartment("");
+                    setFloor("");
+                    setSearch("");
+                  }}
+                >
+                  <div>
+                    <span>{label}</span>
+                    <span className="stat-icon">
+                      <Icon size={19} />
+                    </span>
+                  </div>
+                  <strong>
+                    {loading ? "—" : stats[index].toLocaleString("id-ID")}
+                  </strong>
+                  <small>{caption}</small>
+                </button>
+              ))}
+            </section>
+          )}
           {section === "overview" && (
             <section className="overview-strip">
               <div>
@@ -885,7 +914,7 @@ export default function Portal({ profile }) {
                   <Activity size={23} />
                 </span>
                 <div>
-                  <h3>Ruang yang nyaman, dimulai dari tim yang terhubung.</h3>
+                  <h3>Perlu perhatian</h3>
                   <p>
                     {
                       tickets.filter(
@@ -903,10 +932,10 @@ export default function Portal({ profile }) {
                 className="text-button"
                 onClick={() => {
                   setSection("tickets");
-                  setStatus("pending");
+                  setStatus("");
                 }}
               >
-                Lihat antrean
+                Lihat request
                 <ArrowRight size={16} />
               </button>
             </section>
@@ -917,289 +946,435 @@ export default function Portal({ profile }) {
             <Account profile={profile} />
           ) : section === "departments" ? (
             <section className="department-grid">
-              {departments.map((d) => {
-                const list = tickets.filter((t) => t.department_id === d.id),
-                  open = list.filter((t) =>
-                    ["pending", "in_progress"].includes(t.status),
-                  ).length;
-                return (
-                  <button
-                    className="department-card"
-                    key={d.id}
-                    onClick={() => {
-                      setDepartment(d.id);
-                      setSection("tickets");
-                    }}
-                  >
-                    <span className="department-code">{d.code}</span>
-                    <h3>{d.name}</h3>
-                    <p>{d.is_active ? "Departemen aktif" : "Tidak aktif"}</p>
-                    <div>
-                      <strong>{open}</strong>
-                      <span>tiket terbuka</span>
-                      <ArrowUpRight size={20} />
-                    </div>
-                  </button>
-                );
-              })}
-            </section>
-          ) : (
-            <section className="tracker">
-              <div className="tracker-heading">
-                <div>
-                  <h2>
-                    {section === "overview" ? "Monitor tiket" : "Daftar tiket"}
-                    <span>{filtered.length}</span>
-                  </h2>
-                  <p>Laporan terkini dan progres penanganan tim.</p>
-                </div>
-                <div className="view-toggle">
-                  <button
-                    className={view === "table" ? "selected" : ""}
-                    aria-label="Tampilan tabel"
-                    onClick={() => setView("table")}
-                  >
-                    <List size={16} />
-                    Tabel
-                  </button>
-                  <button
-                    className={view === "kanban" ? "selected" : ""}
-                    aria-label="Tampilan kanban"
-                    onClick={() => setView("kanban")}
-                  >
-                    <LayoutGrid size={16} />
-                    Board
-                  </button>
-                </div>
-              </div>
-              <div className="filters">
-                <div className="search-input">
-                  <Search size={17} />
-                  <input
-                    aria-label="Cari tiket"
-                    placeholder="Cari nomor, judul, atau lokasi..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                <SlidersHorizontal className="filter-symbol" size={16} />
-                <select
-                  aria-label="Filter departemen"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                >
-                  <option value="">Semua departemen</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Filter lantai"
-                  value={floor}
-                  onChange={(e) => setFloor(e.target.value)}
-                >
-                  <option value="">Semua area</option>
-                  {locations.map((l) => (
-                    <option key={l}>{l}</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Filter status"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="">Semua status</option>
-                  {Object.entries(statuses).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="icon-button"
-                  aria-label="Muat ulang tiket"
-                  onClick={load}
-                >
-                  <RefreshCw size={17} />
-                </button>
-              </div>
-              {loading ? (
-                <div className="empty">
-                  <LoaderCircle className="spin" />
-                  <h3>Memuat ruang kerja...</h3>
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="empty">
-                  <span>
-                    <Ticket size={29} />
-                  </span>
-                  <h3>
-                    {tickets.length
-                      ? "Tidak ada tiket yang cocok"
-                      : "Ruang kerja siap menerima laporan"}
-                  </h3>
-                  <p>
-                    {tickets.length
-                      ? "Coba ubah pencarian atau filter Anda."
-                      : "Buat tiket pertama untuk mulai mengoordinasikan kebutuhan mall."}
-                  </p>
-                  {tickets.length ? (
+              {departments
+                .filter((d) => d.is_active)
+                .map((d) => {
+                  const list = tickets.filter((t) => t.department_id === d.id),
+                    open = list.filter((t) =>
+                      ["pending", "in_progress"].includes(t.status),
+                    ).length;
+                  return (
                     <button
-                      className="secondary"
+                      className="department-card"
+                      key={d.id}
                       onClick={() => {
-                        setSearch("");
-                        setDepartment("");
-                        setFloor("");
-                        setStatus("");
+                        setDepartment(d.id);
+                        setSection("tickets");
                       }}
                     >
-                      Reset filter
+                      <span className="department-code">{d.code}</span>
+                      <h3>{d.name}</h3>
+                      <p>{d.is_active ? "Departemen aktif" : "Tidak aktif"}</p>
+                      <div>
+                        <strong>{open}</strong>
+                        <span>tiket terbuka</span>
+                        <ArrowUpRight size={20} />
+                      </div>
                     </button>
-                  ) : (
+                  );
+                })}
+            </section>
+          ) : (
+            <>
+              <section className="tracker">
+                <div className="tracker-heading">
+                  <div>
+                    <h2>
+                      {section === "overview"
+                        ? "Monitor tiket"
+                        : "Daftar tiket"}
+                      <span>{filtered.length}</span>
+                    </h2>
+                    <p>Laporan terkini dan progres penanganan tim.</p>
+                  </div>
+                  <div className="view-toggle">
                     <button
-                      className="primary"
-                      onClick={() => setNewTicket(true)}
+                      className={view === "table" ? "selected" : ""}
+                      aria-label="Tampilan tabel"
+                      onClick={() => setView("table")}
                     >
-                      <Plus size={16} />
-                      Buat tiket pertama
+                      <List size={16} />
+                      Tabel
                     </button>
+                    <button
+                      className={view === "kanban" ? "selected" : ""}
+                      aria-label="Tampilan kanban"
+                      onClick={() => setView("kanban")}
+                    >
+                      <LayoutGrid size={16} />
+                      Papan
+                    </button>
+                  </div>
+                </div>
+                <div className="status-tabs" aria-label="Status request">
+                  {[["", "Semua"], ...Object.entries(statuses)].map(
+                    ([key, label]) => (
+                      <button
+                        key={key}
+                        className={status === key ? "selected" : ""}
+                        aria-pressed={status === key}
+                        onClick={() => setStatus(key)}
+                      >
+                        {label}
+                        <span>
+                          {
+                            tickets.filter(
+                              (t) =>
+                                (!department ||
+                                  t.department_id === department) &&
+                                (!floor || t.location.startsWith(floor)) &&
+                                (!key || t.status === key) &&
+                                `${t.title} ${t.ticket_number} ${t.location}`
+                                  .toLowerCase()
+                                  .includes(search.toLowerCase()),
+                            ).length
+                          }
+                        </span>
+                      </button>
+                    ),
                   )}
                 </div>
-              ) : view === "table" ? (
-                <>
+                <div className="filters">
+                  <div className="search-input">
+                    <Search size={17} />
+                    <input
+                      aria-label="Cari tiket"
+                      placeholder="Cari nomor, judul, atau lokasi..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <select
+                    aria-label="Filter departemen"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                  >
+                    <option value="">Semua departemen</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Filter lantai"
+                    value={floor}
+                    onChange={(e) => setFloor(e.target.value)}
+                  >
+                    <option value="">Semua area</option>
+                    {locations.map((l) => (
+                      <option key={l}>{l}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Filter status"
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  >
+                    <option value="">Semua status</option>
+                    <option value="today">Selesai hari ini</option>
+                    {Object.entries(statuses).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="icon-button"
+                    aria-label="Muat ulang tiket"
+                    onClick={load}
+                  >
+                    <RefreshCw size={17} />
+                  </button>
+                </div>
+                {loading ? (
+                  <div className="empty">
+                    <LoaderCircle className="spin" />
+                    <h3>Memuat ruang kerja...</h3>
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <div className="empty">
+                    <span>
+                      <Ticket size={29} />
+                    </span>
+                    <h3>
+                      {tickets.length
+                        ? "Tidak ada tiket yang cocok"
+                        : "Belum ada request"}
+                    </h3>
+                    <p>
+                      {tickets.length
+                        ? "Coba ubah pencarian atau filter Anda."
+                        : "Tekan Buat request untuk melaporkan kebutuhan."}
+                    </p>
+                    {tickets.length ? (
+                      <button
+                        className="secondary"
+                        onClick={() => {
+                          setSearch("");
+                          setDepartment("");
+                          setFloor("");
+                          setStatus("");
+                        }}
+                      >
+                        Reset filter
+                      </button>
+                    ) : (
+                      <button
+                        className="primary"
+                        onClick={() => setNewTicket(true)}
+                      >
+                        <Plus size={16} />
+                        Buat request pertama
+                      </button>
+                    )}
+                  </div>
+                ) : view === "table" ? (
+                  <>
+                    <div className="mobile-tickets">
+                      {filtered.slice((page - 1) * 12, page * 12).map((t) => (
+                        <button
+                          className="mobile-ticket"
+                          key={t.id}
+                          onClick={() => setSelected(t)}
+                        >
+                          <div className="mobile-ticket-head">
+                            <small>{t.ticket_number}</small>
+                            <Badge value={t.status} />
+                          </div>
+                          <h3>{t.title}</h3>
+                          <p>
+                            <MapPin size={17} />
+                            {t.location}
+                          </p>
+                          <p>
+                            <Building2 size={17} />
+                            {deptName(t.department_id)}
+                          </p>
+                          <div className="mobile-ticket-foot">
+                            <Badge value={t.priority} priority />
+                            <span>{fmt(t.created_at)}</span>
+                            <ChevronRight size={20} />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="table-scroll desktop-tickets">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>TIKET / LAPORAN</th>
+                            <th>LOKASI</th>
+                            <th>DEPARTEMEN</th>
+                            <th>PRIORITAS</th>
+                            <th>STATUS</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered
+                            .slice((page - 1) * 12, page * 12)
+                            .map((t) => (
+                              <tr key={t.id}>
+                                <td>
+                                  <button
+                                    className="ticket-title"
+                                    onClick={() => setSelected(t)}
+                                  >
+                                    <small>{t.ticket_number}</small>
+                                    <strong>{t.title}</strong>
+                                    <span>{fmt(t.created_at)} WIB</span>
+                                  </button>
+                                </td>
+                                <td>
+                                  <span className="location-text">
+                                    <MapPin size={14} />
+                                    {t.location}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="dept-label">
+                                    {deptName(t.department_id)}
+                                  </span>
+                                </td>
+                                <td>
+                                  <Badge value={t.priority} priority />
+                                </td>
+                                <td>
+                                  <Badge value={t.status} />
+                                </td>
+                                <td>
+                                  <button
+                                    className="icon-button"
+                                    aria-label={`Buka ${t.ticket_number}`}
+                                    onClick={() => setSelected(t)}
+                                  >
+                                    <ChevronRight size={17} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="pagination">
+                      <span>
+                        Menampilkan {(page - 1) * 12 + 1}–
+                        {Math.min(page * 12, filtered.length)} dari{" "}
+                        {filtered.length} tiket
+                      </span>
+                      <div>
+                        <button
+                          className="secondary"
+                          disabled={page === 1}
+                          onClick={() => setPage((p) => p - 1)}
+                        >
+                          Sebelumnya
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={page * 12 >= filtered.length}
+                          onClick={() => setPage((p) => p + 1)}
+                        >
+                          Berikutnya
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="kanban">
+                    {Object.entries(statuses).map(([s, label]) => (
+                      <div className="kanban-column" key={s}>
+                        <h3>
+                          <span className={`status-dot ${s}`} />
+                          {label}
+                          <span>
+                            {filtered.filter((t) => t.status === s).length}
+                          </span>
+                        </h3>
+                        {filtered
+                          .filter((t) => t.status === s)
+                          .map((t) => (
+                            <button
+                              className="kanban-card"
+                              key={t.id}
+                              onClick={() => setSelected(t)}
+                            >
+                              <div>
+                                <small>{t.ticket_number}</small>
+                                <Badge value={t.priority} priority />
+                              </div>
+                              <h4>{t.title}</h4>
+                              <p>
+                                <MapPin size={13} />
+                                {t.location}
+                              </p>
+                              <footer>
+                                <span>{deptName(t.department_id)}</span>
+                                <ChevronRight size={16} />
+                              </footer>
+                            </button>
+                          ))}
+                        {!filtered.some((t) => t.status === s) && (
+                          <p className="kanban-empty">Belum ada tiket</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+              {section === "overview" && (
+                <section className="department-summary">
+                  <h2>Ringkasan departemen</h2>
+                  <p>Jumlah request yang dapat Anda akses.</p>
                   <div className="table-scroll">
                     <table>
                       <thead>
                         <tr>
-                          <th>TIKET / LAPORAN</th>
-                          <th>LOKASI</th>
-                          <th>DEPARTEMEN</th>
-                          <th>PRIORITAS</th>
-                          <th>STATUS</th>
-                          <th />
+                          <th>Departemen</th>
+                          <th>Open</th>
+                          <th>In Progress</th>
+                          <th>Resolved / Closed</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filtered.slice((page - 1) * 12, page * 12).map((t) => (
-                          <tr key={t.id}>
-                            <td>
-                              <button
-                                className="ticket-title"
-                                onClick={() => setSelected(t)}
-                              >
-                                <small>{t.ticket_number}</small>
-                                <strong>{t.title}</strong>
-                                <span>{fmt(t.created_at)} WIB</span>
-                              </button>
-                            </td>
-                            <td>
-                              <span className="location-text">
-                                <MapPin size={14} />
-                                {t.location}
-                              </span>
-                            </td>
-                            <td>
-                              <span className="dept-label">
-                                {deptName(t.department_id)}
-                              </span>
-                            </td>
-                            <td>
-                              <Badge value={t.priority} priority />
-                            </td>
-                            <td>
-                              <Badge value={t.status} />
-                            </td>
-                            <td>
-                              <button
-                                className="icon-button"
-                                aria-label={`Buka ${t.ticket_number}`}
-                                onClick={() => setSelected(t)}
-                              >
-                                <ChevronRight size={17} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {departments
+                          .filter((d) => d.is_active)
+                          .map((d) => {
+                            const rows = tickets.filter(
+                              (t) => t.department_id === d.id,
+                            );
+                            return (
+                              <tr key={d.id}>
+                                <td>
+                                  <button
+                                    className="text-button"
+                                    onClick={() => {
+                                      setDepartment(d.id);
+                                      setStatus("");
+                                      setSection("tickets");
+                                    }}
+                                  >
+                                    {d.name}
+                                  </button>
+                                </td>
+                                <td>
+                                  {
+                                    rows.filter((t) => t.status === "pending")
+                                      .length
+                                  }
+                                </td>
+                                <td>
+                                  {
+                                    rows.filter(
+                                      (t) => t.status === "in_progress",
+                                    ).length
+                                  }
+                                </td>
+                                <td>
+                                  {
+                                    rows.filter((t) =>
+                                      ["resolved", "closed"].includes(t.status),
+                                    ).length
+                                  }
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
-                  <div className="pagination">
-                    <span>
-                      Menampilkan {(page - 1) * 12 + 1}–
-                      {Math.min(page * 12, filtered.length)} dari{" "}
-                      {filtered.length} tiket
-                    </span>
-                    <div>
-                      <button
-                        className="secondary"
-                        disabled={page === 1}
-                        onClick={() => setPage((p) => p - 1)}
-                      >
-                        Sebelumnya
-                      </button>
-                      <button
-                        className="secondary"
-                        disabled={page * 12 >= filtered.length}
-                        onClick={() => setPage((p) => p + 1)}
-                      >
-                        Berikutnya
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="kanban">
-                  {Object.entries(statuses).map(([s, label]) => (
-                    <div className="kanban-column" key={s}>
-                      <h3>
-                        <span className={`status-dot ${s}`} />
-                        {label}
-                        <span>
-                          {filtered.filter((t) => t.status === s).length}
-                        </span>
-                      </h3>
-                      {filtered
-                        .filter((t) => t.status === s)
-                        .map((t) => (
-                          <button
-                            className="kanban-card"
-                            key={t.id}
-                            onClick={() => setSelected(t)}
-                          >
-                            <div>
-                              <small>{t.ticket_number}</small>
-                              <Badge value={t.priority} priority />
-                            </div>
-                            <h4>{t.title}</h4>
-                            <p>
-                              <MapPin size={13} />
-                              {t.location}
-                            </p>
-                            <footer>
-                              <span>{deptName(t.department_id)}</span>
-                              <ChevronRight size={16} />
-                            </footer>
-                          </button>
-                        ))}
-                      {!filtered.some((t) => t.status === s) && (
-                        <p className="kanban-empty">Belum ada tiket</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                </section>
               )}
-            </section>
+            </>
           )}
           <footer className="dashboard-footer">
             <span>
               P-Ex Connect <i /> Pekanbaru XChange
             </span>
-            <span>Terhubung untuk pelayanan yang lebih baik.</span>
           </footer>
         </main>
       </div>
+      <nav className="bottom-nav" aria-label="Navigasi utama">
+        {[
+          ["overview", LayoutDashboard, "Dashboard"],
+          ["tickets", Ticket, "Request"],
+          ["new", Plus, "Buat"],
+          ["account", UserRound, "Akun"],
+        ].map(([key, Icon, label]) => (
+          <button
+            key={key}
+            aria-current={section === key ? "page" : undefined}
+            className={section === key ? "active" : ""}
+            onClick={() =>
+              key === "new" ? setNewTicket(true) : setSection(key)
+            }
+          >
+            <Icon size={22} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
       {newTicket && (
         <NewTicket
           departments={departments}
