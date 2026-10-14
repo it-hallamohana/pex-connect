@@ -1,4 +1,5 @@
 "use client";
+import AuthBackdrop from "@/components/auth-backdrop";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -41,6 +42,7 @@ export default function Login() {
   }
   return (
     <main className="login-page">
+      <AuthBackdrop />
       <section className="login-story">
         <a className="brand" href="/login">
           <span className="brand-icon">

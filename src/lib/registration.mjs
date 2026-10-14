@@ -1,27 +1,5 @@
-export const departmentOptions = [
-  ["ACC", "Accounting"],
-  ["AG", "Administration & General"],
-  ["BAN", "Banquet"],
-  ["ENG", "Engineering"],
-  ["FBS", "F&B Service"],
-  ["FC", "Finance Control"],
-  ["FO", "Front Office"],
-  ["HR", "HR"],
-  ["HK", "Housekeeping"],
-  ["IA", "Income Audit"],
-  ["IT", "IT"],
-  ["KIT", "Kitchen"],
-  ["LND", "Laundry"],
-  ["MKT", "Marketing"],
-  ["MOD", "MOD"],
-  ["PA", "Public Area"],
-  ["RES", "Reservation"],
-  ["FB", "Restaurant"],
-  ["RM", "Room Maintenance"],
-  ["SLS", "Sales"],
-  ["SEC", "Security"],
-  ["SPA", "Spa"],
-];
+import { mallCatalog } from "./mall-catalog.mjs";
+export const departmentOptions = mallCatalog.departments;
 export const roles = {
   admin: "Administrator",
   supervisor: "Supervisor",

@@ -1,3 +1,4 @@
+import { mallCatalog } from "./mall-catalog.mjs";
 export const statuses = {
   pending: "Open",
   in_progress: "In Progress",
@@ -21,15 +22,7 @@ export const categories = [
   "Keamanan",
   "Lainnya",
 ];
-export const locations = [
-  "Ground Floor",
-  "Lantai 1",
-  "Lantai 2",
-  "Lantai 3",
-  "Basement",
-  "Area Parkir",
-  "Area Luar",
-];
+export const locations = [...new Set(mallCatalog.modItems.map((i) => i.floor))];
 export function canManage(profile, ticket) {
   return (
     profile.role === "admin" ||

@@ -28,7 +28,9 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
-import { requestTitles } from "@/lib/request-titles.mjs";
+import ModPanel from "@/components/mod-panel";
+import { mallCatalog } from "@/lib/mall-catalog.mjs";
+import { requestTitles, operationalAreas } from "@/lib/request-titles.mjs";
 import Account from "@/components/account";
 import Members from "@/components/members";
 import {
@@ -116,14 +118,20 @@ function PhotoInput({ name = "photo", required = false }) {
     </label>
   );
 }
-function NewTicket({ departments, close, done }) {
+function NewTicket({ departments, close, done, initial = {} }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [destination, setDestination] = useState("");
-  const [titleChoice, setTitleChoice] = useState("");
-  const titleOptions = requestTitles(
-    departments.find((d) => d.id === destination)?.code,
+  const [titleChoice, setTitleChoice] = useState(
+    initial.title ? "Lainnya" : "",
   );
+  const [area, setArea] = useState("");
+  const [selectedFloor, setSelectedFloor] = useState(
+    initial.floor || locations[0],
+  );
+  const code = departments.find((d) => d.id === destination)?.code;
+  const areaOptions = operationalAreas(code);
+  const titleOptions = requestTitles(code, area);
   const photoPath = useRef(null),
     photoFile = useRef(null);
   async function submit(e) {
@@ -145,7 +153,7 @@ function NewTicket({ departments, close, done }) {
       const { error } = await createClient().rpc("create_request", {
         p_title: titleChoice === "Lainnya" ? f.get("title") : titleChoice,
         p_description: f.get("description"),
-        p_category: f.get("request_type"),
+        p_category: area,
         p_location: `${f.get("floor")} · ${f.get("location")}`,
         p_priority: f.get("priority"),
         p_department: f.get("department"),
@@ -168,13 +176,6 @@ function NewTicket({ departments, close, done }) {
     >
       <form onSubmit={submit}>
         <label>
-          Jenis request *
-          <select name="request_type" defaultValue="Guest Request">
-            <option>Guest Request</option>
-            <option>Internal Request</option>
-          </select>
-        </label>
-        <label>
           Departemen tujuan *
           <select
             name="department"
@@ -182,7 +183,8 @@ function NewTicket({ departments, close, done }) {
             value={destination}
             onChange={(e) => {
               setDestination(e.target.value);
-              setTitleChoice("");
+              setArea("");
+              setTitleChoice(initial.title ? "Lainnya" : "");
             }}
           >
             <option value="" disabled>
@@ -198,10 +200,36 @@ function NewTicket({ departments, close, done }) {
           </select>
         </label>
         <label>
+          Area operasional *
+          <select
+            required
+            name="operation_area"
+            value={area}
+            disabled={!destination}
+            onChange={(e) => {
+              setArea(e.target.value);
+              setTitleChoice(initial.title ? "Lainnya" : "");
+            }}
+          >
+            <option value="" disabled>
+              Pilih area operasional
+            </option>
+            {areaOptions.map((a) => (
+              <option key={a}>{a}</option>
+            ))}
+          </select>
+        </label>
+        {area && titleOptions.length === 1 && (
+          <p className="account-hint">
+            Dokumen belum memuat pilihan kebutuhan untuk area ini. Pilih Lainnya
+            dan tuliskan kebutuhan.
+          </p>
+        )}
+        <label>
           Judul request *
           <select
             required
-            disabled={!destination}
+            disabled={!area}
             value={titleChoice}
             onChange={(e) => setTitleChoice(e.target.value)}
           >
@@ -223,14 +251,19 @@ function NewTicket({ departments, close, done }) {
               required
               minLength={5}
               maxLength={160}
+              defaultValue={initial.title || ""}
               placeholder="Tuliskan kebutuhan Anda"
             />
           </label>
         )}
         <div className="form-grid">
           <label>
-            Lantai / area *
-            <select name="floor">
+            Lantai / zona *
+            <select
+              name="floor"
+              value={selectedFloor}
+              onChange={(e) => setSelectedFloor(e.target.value)}
+            >
               {locations.map((l) => (
                 <option key={l}>{l}</option>
               ))}
@@ -240,12 +273,25 @@ function NewTicket({ departments, close, done }) {
             Lokasi spesifik *
             <input
               name="location"
+              list="mall-locations"
+              defaultValue={initial.location || ""}
               placeholder="Koridor timur / Unit 12B"
               maxLength={120}
               required
             />
           </label>
         </div>
+        <datalist id="mall-locations">
+          {[
+            ...new Set(
+              mallCatalog.modItems
+                .filter((i) => i.floor === selectedFloor)
+                .map((i) => i.area),
+            ),
+          ].map((a) => (
+            <option key={a} value={a} />
+          ))}
+        </datalist>
         <label>
           Prioritas *
           <select name="priority" defaultValue="medium">
@@ -260,6 +306,7 @@ function NewTicket({ departments, close, done }) {
           Deskripsi detail *
           <textarea
             name="description"
+            defaultValue={initial.description || ""}
             rows={3}
             minLength={10}
             maxLength={5000}
@@ -608,7 +655,8 @@ export default function Portal({ profile }) {
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const [section, setSection] = useState("overview"),
+  const [modDirty, setModDirty] = useState(false);
+  const [section, setSectionValue] = useState("overview"),
     [view, setView] = useState("table"),
     [search, setSearch] = useState(""),
     [department, setDepartment] = useState(""),
@@ -629,6 +677,16 @@ export default function Portal({ profile }) {
     screen.addEventListener("change", useMobileList);
     return () => screen.removeEventListener("change", useMobileList);
   }, []);
+  function setSection(next) {
+    if (
+      section === "mod" &&
+      next !== "mod" &&
+      modDirty &&
+      !window.confirm("Draft MOD belum disimpan. Tinggalkan perubahan?")
+    )
+      return;
+    setSectionValue(next);
+  }
   const generation = useRef(0);
   const load = useCallback(async () => {
     const seq = ++generation.current;
@@ -740,6 +798,7 @@ export default function Portal({ profile }) {
     ["overview", LayoutDashboard, "Dashboard"],
     ["tickets", Ticket, "Request"],
     ["departments", Building2, "Departemen"],
+    ...(profile.role !== "tenant" ? [["mod", CheckCheck, "MOD"]] : []),
     ...(profile.role === "admin" ? [["members", ShieldCheck, "Pengguna"]] : []),
     ["account", UserRound, "Akun"],
   ];
@@ -839,11 +898,13 @@ export default function Portal({ profile }) {
                   ? `Selamat bekerja, ${profile.full_name.split(" ")[0]}. Pantau dan koordinasikan kebutuhan mall hari ini.`
                   : section === "tickets"
                     ? "Kelola laporan dan permintaan dalam satu ruang kerja."
-                    : section === "members"
-                      ? "Setujui pendaftaran dan tetapkan jabatan serta departemen final setiap pengguna."
-                      : section === "account"
-                        ? "Kelola keamanan akun P-Ex Connect Anda."
-                        : "Pantau distribusi pekerjaan di setiap departemen."}
+                    : section === "mod"
+                      ? "Checklist area dan daftar leader MOD."
+                      : section === "members"
+                        ? "Setujui pendaftaran dan tetapkan jabatan serta departemen final setiap pengguna."
+                        : section === "account"
+                          ? "Kelola keamanan akun P-Ex Connect Anda."
+                          : "Pantau distribusi pekerjaan di setiap departemen."}
               </p>
             </div>
             <button className="primary" onClick={() => setNewTicket(true)}>
@@ -940,7 +1001,14 @@ export default function Portal({ profile }) {
               </button>
             </section>
           )}
-          {section === "members" && profile.role === "admin" ? (
+          {section === "mod" && profile.role !== "tenant" ? (
+            <ModPanel
+              profile={profile}
+              departments={departments}
+              onRequest={setNewTicket}
+              onDirty={setModDirty}
+            />
+          ) : section === "members" && profile.role === "admin" ? (
             <Members profile={profile} departments={departments} />
           ) : section === "account" ? (
             <Account profile={profile} />
@@ -1050,11 +1118,17 @@ export default function Portal({ profile }) {
                     onChange={(e) => setDepartment(e.target.value)}
                   >
                     <option value="">Semua departemen</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
+                    {departments
+                      .filter(
+                        (d) =>
+                          d.is_active ||
+                          tickets.some((t) => t.department_id === d.id),
+                      )
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
                   </select>
                   <select
                     aria-label="Filter lantai"
@@ -1360,7 +1434,9 @@ export default function Portal({ profile }) {
           ["overview", LayoutDashboard, "Dashboard"],
           ["tickets", Ticket, "Request"],
           ["new", Plus, "Buat"],
-          ["account", UserRound, "Akun"],
+          profile.role === "tenant"
+            ? ["account", UserRound, "Akun"]
+            : ["mod", CheckCheck, "MOD"],
         ].map(([key, Icon, label]) => (
           <button
             key={key}
@@ -1378,6 +1454,7 @@ export default function Portal({ profile }) {
       {newTicket && (
         <NewTicket
           departments={departments}
+          initial={typeof newTicket === "object" ? newTicket : {}}
           close={() => setNewTicket(false)}
           done={done}
         />

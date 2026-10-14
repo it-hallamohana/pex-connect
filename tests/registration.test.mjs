@@ -39,6 +39,15 @@ test("registration, admin verification, department override, rejection/resubmiss
     assert.doesNotMatch(departmentMigration, /\bpublic\s*\./i);
     await db.exec(departmentMigration);
     await db.exec(departmentMigration);
+    await db.exec(
+      await readFile(
+        new URL(
+          "../supabase/migrations/20261014141836_mall_source_catalog_mod.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
     assert.deepEqual(
       (
         await db.query(
@@ -78,10 +87,10 @@ test("registration, admin verification, department override, rejection/resubmiss
         i === 4 ? null : new Date().toISOString(),
       ]);
     const { rows: depts } = await db.query(
-      "SELECT id,code FROM mall.departments WHERE code IN ('ENG','HK') ORDER BY code",
+      "SELECT id,code FROM mall.departments WHERE code IN ('ENG','GA') ORDER BY code",
     );
     const eng = depts[0].id,
-      hk = depts[1].id;
+      ga = depts[1].id;
     await db.query(
       "INSERT INTO mall.profiles(id,full_name,email,role,department_id) VALUES($1,'Admin Mall','admin@example.invalid','admin',$2)",
       [ids[0], eng],
@@ -130,7 +139,7 @@ test("registration, admin verification, department override, rejection/resubmiss
       .rows[0];
     const review = (
       decision = "approved",
-      dept = hk,
+      dept = ga,
       expected = app.updated_at,
       notes = null,
     ) =>
@@ -152,7 +161,7 @@ test("registration, admin verification, department override, rejection/resubmiss
     );
     await assert.rejects(() => review("approved", null), /departemen final/);
     await assert.rejects(
-      () => review("approved", hk, "2000-01-01T00:00:00Z"),
+      () => review("approved", ga, "2000-01-01T00:00:00Z"),
       /Data berubah/,
     );
     await review();
@@ -160,7 +169,7 @@ test("registration, admin verification, department override, rejection/resubmiss
     let member = (
       await db.query("SELECT * FROM mall.profiles WHERE id=$1", [ids[1]])
     ).rows[0];
-    assert.equal(member.department_id, hk);
+    assert.equal(member.department_id, ga);
     assert.equal(member.job_title, "Housekeeping Attendant");
     assert.equal(member.role, "staff");
     const requestAfter = (

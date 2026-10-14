@@ -100,12 +100,20 @@ Fase 1 belum mencakup push notification/email operasional, SLA otomatis, ekspor 
 
 Referensi: [Supabase custom schemas](https://supabase.com/docs/guides/api/using-custom-schemas), [Supabase SSR](https://supabase.com/docs/guides/auth/server-side/creating-a-client), [Storage access control](https://supabase.com/docs/guides/storage/security/access-control).
 
-## Tampilan operasional sederhana
+## Acuan resmi Mall dan MOD
 
-Departemen dan pilihan judul request mengikuti referensi kode lokal FOXI Connect. Jalankan migrasi `supabase/migrations/20261014034925_mall_foxi_departments.sql` setelah migrasi registrasi. Migrasi hanya mengubah `mall.departments`, mempertahankan ID dan relasi lama, dan menonaktifkan CS/TR untuk pilihan baru. Nama/kode berasal dari referensi source, bukan query ke database hotel.
+Daftar hotel pada migrasi sebelumnya telah diganti oleh `20261014141836_mall_source_catalog_mod.sql`. Sumber: [Checklist PX - Connect](https://docs.google.com/spreadsheets/d/1oUImJKAI1KMF-CMBnnFR7QxbtBWwm-SyhB3MVyYCI5I/edit?gid=1457178504), tab MOD, Operasional Mall, dan Leader Photo.
 
-Form menggunakan Guest Request / Internal Request, departemen tujuan, judul sesuai departemen (atau Lainnya), lantai/lokasi, deskripsi, foto, dan prioritas. Nilai jenis request disimpan dalam kolom kategori yang sudah tersedia.
+Enam divisi operasional: General Affair, Human Resource, Legal Department, Engineering, Marketing, Marcomm; MOD ditambahkan untuk penempatan petugas pemeriksaan. Subarea House Keeping, Security, dan Customer Service berada pada General Affair. Departemen terdahulu dinonaktifkan, bukan dihapus, sehingga relasi profil dan riwayat tetap utuh. Admin dapat memindahkan pengguna lama melalui menu Pengguna.
 
-Label Open memakai nilai internal `pending` agar tiket dan RPC lama tetap kompatibel. Status selanjutnya In Progress, Resolved, Closed, dan Rejected. Dashboard menyediakan KPI yang dapat diklik, filter status, ringkasan departemen, daftar kartu di ponsel, dan tabel/papan di laptop. Data tetap dibatasi RLS: admin melihat semua; staf/supervisor melihat departemennya dan request yang dibuat sendiri. Jabatan tidak otomatis memberi akses lintas departemen.
+Form request memilih departemen, area operasional, lalu kebutuhan dari spreadsheet. Customer Service tidak memiliki butir kebutuhan pada dokumen, sehingga hanya menyediakan Lainnya. Lokasi/zona mengacu pada tab MOD. Tidak ada lagi judul request hotel. Data katalog tersimpan di `src/lib/mall-catalog.mjs`; pembaruan spreadsheet tidak tersinkron otomatis.
 
-Tipografi utama 16px, teks pendukung umumnya 14px, kontrol minimal 44–48px, kontras lebih kuat. Navigasi bawah muncul di ponsel/tablet. Tidak ada perubahan kebijakan RLS, Auth hotel, bucket hotel, atau tabel di schema hotel.
+Menu MOD menampilkan 7 leader dan 117 butir pemeriksaan. Admin, supervisor, dan staf departemen MOD dapat membuat pemeriksaan dan menyimpan draft. Semua butir harus dijawab (Baik, Perlu tindak lanjut, atau Tidak berlaku) sebelum dikirim; temuan wajib diberi catatan. Hasil terkirim tidak dapat diedit. Admin dapat membaca semua hasil; pengisi hanya dapat membaca/memperbarui miliknya sendiri. Pemilihan leader adalah label penanggung jawab pemeriksaan, tidak memberikan role atau membuat akun Auth. Tidak ada jadwal piket otomatis karena sumber tidak memuat jadwal.
+
+Tombol Buat request tindak lanjut membuka formulir dengan judul, lokasi, dan catatan temuan; pengguna memilih divisi/area tujuan lalu mengirim request. Draft checklist disimpan terpisah.
+
+Foto leader diekstrak dari posisi gambar pada tab Leader Photo dan disimpan privat di `mall-attachments/leaders/source-v1-N.jpg`. Foto hanya disajikan lewat route `/api/leaders/photo` setelah pemeriksaan profil Mall aktif. File foto tidak masuk repository publik. Untuk instalasi baru, unggah 7 foto sumber ke path tersebut melalui kredensial server; migrasi menyimpan referensinya.
+
+Label Open memakai nilai internal `pending`, agar kompatibel dengan tiket/RPC lama. Data dashboard tetap mengikuti RLS. Login dan registrasi memiliki background ilustrasi garis atrium, dengan kartu formulir putih dan tipografi utama 16px.
+
+Urutan migrasi: init schema, attachment validation, registration approval, foxi_departments (historis), lalu source_catalog_mod (acuan terbaru). Jangan menjalankan kembali migrasi foxi_departments setelah source_catalog_mod. Seluruh objek bisnis tetap di schema `mall`; schema `public` dan bucket hotel tidak disentuh.

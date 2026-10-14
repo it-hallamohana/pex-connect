@@ -1,4 +1,5 @@
 "use client";
+import AuthBackdrop from "@/components/auth-backdrop";
 import { useState } from "react";
 import {
   ArrowUpRight,
@@ -182,6 +183,7 @@ export default function Registration({ accessState = null, defaults = {} }) {
     : defaults;
   return (
     <main className="registration-page">
+      <AuthBackdrop />
       <a className="brand" href="/login">
         <span className="brand-icon">
           <ArrowUpRight />
