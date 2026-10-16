@@ -673,6 +673,7 @@ export default function Portal({ profile, initialSection = "tickets" }) {
     [mobile, setMobile] = useState(false),
     [revision, setRevision] = useState(0),
     [modDirty, setModDirty] = useState(false);
+  const [reportTarget, setReportTarget] = useState(null);
   const generation = useRef(0);
   function setSection(next) {
     if (next === "overview" && !canDashboard(profile.role)) return;
@@ -932,6 +933,7 @@ export default function Portal({ profile, initialSection = "tickets" }) {
                   departments={departments}
                   onDirty={setModDirty}
                   onRequest={setNewTicket}
+                  reportTarget={reportTarget}
                 />
               )}
               {section === "members" && isAdministrator(profile.role) && (
@@ -975,7 +977,12 @@ export default function Portal({ profile, initialSection = "tickets" }) {
         ))}
       </nav>
       {!mobile && !newTicket && !selected && profile.role !== "tenant" && (
-        <DutyCard onOpen={() => setSection("mod")} />
+        <DutyCard
+          onOpen={(report) => {
+            setReportTarget({ id: report.id, nonce: Date.now() });
+            setSection("mod");
+          }}
+        />
       )}
       {newTicket && (
         <NewTicket

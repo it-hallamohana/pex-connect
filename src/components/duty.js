@@ -174,7 +174,21 @@ export default function DutyCard({ onOpen }) {
       setDuty(null);
       return;
     }
-    setDuty({ ...data, leader });
+    const { data: report, error: reportError } = await sb
+      .from("mod_rounds")
+      .select("id, submitted_at")
+      .eq("inspection_date", jakartaDay())
+      .eq("leader_id", data.leader_id)
+      .eq("status", "submitted")
+      .order("submitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (reportError) {
+      setError(true);
+      setDuty({ ...data, leader, report: null });
+      return;
+    }
+    setDuty({ ...data, leader, report });
   }, []);
   useEffect(() => {
     setMinimized(window.matchMedia("(max-width: 640px)").matches);
@@ -225,9 +239,11 @@ export default function DutyCard({ onOpen }) {
               <small>{duty?.leader?.job_title || "Manager On Duty"}</small>
             </div>
           </div>
-          <button className="text-button" onClick={onOpen}>
-            Buka checklist MOD
-          </button>
+          {duty?.report && (
+            <button className="text-button" onClick={() => onOpen(duty.report)}>
+              Lihat laporan MOD
+            </button>
+          )}
         </>
       )}
     </aside>

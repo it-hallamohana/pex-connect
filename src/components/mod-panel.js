@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ClipboardCheck,
   Plus,
@@ -19,7 +19,13 @@ const labels = {
   na: "Tidak berlaku",
 };
 const zones = [...new Set(mallCatalog.modItems.map((i) => i.floor))];
-export default function ModPanel({ profile, departments, onRequest, onDirty }) {
+export default function ModPanel({
+  profile,
+  departments,
+  onRequest,
+  onDirty,
+  reportTarget,
+}) {
   const [leaders, setLeaders] = useState([]),
     [rounds, setRounds] = useState([]),
     [loading, setLoading] = useState(true);
@@ -32,6 +38,7 @@ export default function ModPanel({ profile, departments, onRequest, onDirty }) {
     [leader, setLeader] = useState(""),
     [date, setDate] = useState(jakartaDay()),
     [zone, setZone] = useState(zones[0]);
+  const openedReportNonce = useRef(null);
   const allowed = hasGlobalRequests(profile.role);
   const locked =
     current?.status === "submitted" ||
@@ -67,6 +74,14 @@ export default function ModPanel({ profile, departments, onRequest, onDirty }) {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    if (!reportTarget || openedReportNonce.current === reportTarget.nonce)
+      return;
+    const report = rounds.find((round) => round.id === reportTarget.id);
+    if (!report) return;
+    openedReportNonce.current = reportTarget.nonce;
+    open(report);
+  }, [reportTarget, rounds]);
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
