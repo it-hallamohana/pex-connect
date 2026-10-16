@@ -10,7 +10,8 @@ import {
   X,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
-import { roles, jobTitles } from "@/lib/registration.mjs";
+import JobTitleField from "@/components/job-title-field";
+import { roles, suggestedRole, isAdministrator } from "@/lib/registration.mjs";
 const formatDate = (value) =>
   new Intl.DateTimeFormat("id-ID", {
     dateStyle: "medium",
@@ -19,7 +20,8 @@ const formatDate = (value) =>
   }).format(new Date(value));
 function AccessFields({ departments, member = null, request = null }) {
   const [role, setRole] = useState(
-    member?.role || request?.account_type || "staff",
+    member?.role ||
+      suggestedRole(request?.requested_job_title, request?.account_type),
   );
   return (
     <div className="member-fields">
@@ -41,12 +43,12 @@ function AccessFields({ departments, member = null, request = null }) {
         Departemen final *
         <select
           name="department"
-          required
-          defaultValue={member?.department_id || ""}
+          required={!isAdministrator(role)}
+          defaultValue={
+            member?.department_id || request?.requested_department_id || ""
+          }
         >
-          <option value="" disabled>
-            Admin memilih departemen
-          </option>
+          <option value="">Pilih departemen</option>
           {departments
             .filter((d) => d.is_active)
             .map((d) => (
@@ -56,18 +58,10 @@ function AccessFields({ departments, member = null, request = null }) {
             ))}
         </select>
       </label>
-      <label>
-        Jabatan final *
-        <input
-          name="job_title"
-          list="member-job-options"
-          required
-          minLength={2}
-          maxLength={100}
-          defaultValue={member?.job_title || request?.requested_job_title || ""}
-          placeholder="Pilih atau ketik jabatan"
-        />
-      </label>
+      <JobTitleField
+        label="Jabatan final *"
+        defaultValue={member?.job_title || request?.requested_job_title || ""}
+      />
       {member && (
         <label>
           Status akses
@@ -156,8 +150,8 @@ function RequestCard({ request, departments, save }) {
             <strong>Verifikasi dan tetapkan akses final</strong>
           </div>
           <p className="account-hint">
-            Departemen final wajib dipilih admin, meskipun sama dengan usulan
-            pendaftar.
+            Data sudah terisi dari pendaftaran. Periksa level akses, lalu
+            setujui; ubah hanya jika perlu.
           </p>
           <AccessFields departments={departments} request={request} />
           <label>
@@ -309,7 +303,7 @@ export default function Members({ profile, departments }) {
   useEffect(() => {
     load();
   }, [load]);
-  if (profile.role !== "admin") return null;
+  if (!isAdministrator(profile.role)) return null;
   const save = (message) => {
     setNotice(message);
     load();
@@ -375,11 +369,6 @@ export default function Members({ profile, departments }) {
           </select>
         )}
       </div>
-      <datalist id="member-job-options">
-        {jobTitles.map((j) => (
-          <option key={j} value={j} />
-        ))}
-      </datalist>
       {notice && (
         <div className="resolution" role="status">
           {notice}

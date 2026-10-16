@@ -1,3 +1,4 @@
+import { isAdministrator, canDashboard } from "./registration.mjs";
 import { mallCatalog } from "./mall-catalog.mjs";
 export const statuses = {
   pending: "Open",
@@ -25,8 +26,10 @@ export const categories = [
 export const locations = [...new Set(mallCatalog.modItems.map((i) => i.floor))];
 export function canManage(profile, ticket) {
   return (
-    profile.role === "admin" ||
-    (["staff", "supervisor"].includes(profile.role) &&
+    isAdministrator(profile.role) ||
+    (["staff", "supervisor", "assistant_manager", "manager"].includes(
+      profile.role,
+    ) &&
       profile.department_id === ticket.department_id)
   );
 }
@@ -40,9 +43,7 @@ export function transitions(status, role) {
       rejected: [],
     }[status] || [];
   return next.filter(
-    (s) =>
-      !["closed", "rejected"].includes(s) ||
-      ["admin", "supervisor"].includes(role),
+    (s) => !["closed", "rejected"].includes(s) || canDashboard(role),
   );
 }
 export function jakartaDay(value = new Date()) {

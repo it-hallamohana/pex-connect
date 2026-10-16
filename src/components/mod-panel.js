@@ -8,6 +8,8 @@ import {
   RefreshCw,
   UserRound,
 } from "lucide-react";
+import { hasGlobalRequests } from "@/lib/registration.mjs";
+import { DutySchedule } from "@/components/duty";
 import { createClient } from "@/lib/supabase";
 import { jakartaDay } from "@/lib/domain.mjs";
 import { mallCatalog } from "@/lib/mall-catalog.mjs";
@@ -30,13 +32,7 @@ export default function ModPanel({ profile, departments, onRequest, onDirty }) {
     [leader, setLeader] = useState(""),
     [date, setDate] = useState(jakartaDay()),
     [zone, setZone] = useState(zones[0]);
-  const allowed =
-    ["admin", "supervisor"].includes(profile.role) ||
-    (profile.role === "staff" &&
-      departments.some(
-        (d) =>
-          d.id === profile.department_id && d.code === "MOD" && d.is_active,
-      ));
+  const allowed = hasGlobalRequests(profile.role);
   const locked =
     current?.status === "submitted" ||
     (current?.inspector_id && current.inspector_id !== profile.id) ||
@@ -130,6 +126,7 @@ export default function ModPanel({ profile, departments, onRequest, onDirty }) {
       setRounds((rows) =>
         [data, ...rows.filter((r) => r.id !== data.id)].slice(0, 30),
       );
+      if (submit) window.dispatchEvent(new Event("mall:duty-updated"));
       setNotice(
         submit
           ? "Checklist terkirim. Hasil pemeriksaan tersimpan."
@@ -146,6 +143,14 @@ export default function ModPanel({ profile, departments, onRequest, onDirty }) {
   ).length;
   return (
     <div className="mod-panel">
+      <section className="checklist-type">
+        <ClipboardCheck size={26} />
+        <div>
+          <h2>MOD — Manager On Duty</h2>
+          <p>Pemeriksaan operasional harian Mall · 117 butir.</p>
+        </div>
+      </section>
+      <DutySchedule profile={profile} leaders={leaders} />
       <section className="leader-section">
         <h2>Leader MOD</h2>
         <p>
@@ -203,8 +208,8 @@ export default function ModPanel({ profile, departments, onRequest, onDirty }) {
         </header>
         {!allowed && (
           <p className="mod-hint">
-            Pengisian checklist tersedia untuk admin, supervisor, dan staf
-            departemen MOD.
+            Pengisian checklist tersedia untuk Assistant Manager, Manager, dan
+            Executive.
           </p>
         )}
         {error && (

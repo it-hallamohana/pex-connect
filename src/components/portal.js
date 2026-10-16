@@ -6,14 +6,9 @@ import {
   Ticket,
   Building2,
   LogOut,
-  Search,
   Plus,
-  ArrowRight,
   Clock3,
   CheckCheck,
-  Activity,
-  LayoutGrid,
-  List,
   MapPin,
   X,
   Upload,
@@ -23,11 +18,14 @@ import {
   MessageSquare,
   UserRound,
   Menu,
-  Wrench,
   Check,
   LoaderCircle,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import OperationsDashboard from "@/components/operations-dashboard";
+import RequestTracker from "@/components/request-tracker";
+import DutyCard from "@/components/duty";
+import { canDashboard, isAdministrator, roles } from "@/lib/registration.mjs";
 import ModPanel from "@/components/mod-panel";
 import { mallCatalog } from "@/lib/mall-catalog.mjs";
 import { requestTitles, operationalAreas } from "@/lib/request-titles.mjs";
@@ -39,8 +37,6 @@ import {
   locations,
   canManage,
   transitions,
-  metrics,
-  jakartaDay,
 } from "@/lib/domain.mjs";
 const fmt = (value) =>
   new Intl.DateTimeFormat("id-ID", {
@@ -361,7 +357,7 @@ function Detail({
     photoSignature = useRef(null);
   const manage = canManage(profile, current),
     next = transitions(current.status, profile.role),
-    admin = ["admin", "supervisor"].includes(profile.role);
+    admin = canDashboard(profile.role);
   useEffect(() => {
     let active = true;
     createClient()
@@ -465,6 +461,12 @@ function Detail({
       <p className="detail-description">{current.description}</p>
       <div className="detail-facts">
         <span>
+          <Building2 size={16} />
+          Pengirim:{" "}
+          {departments.find((d) => d.id === current.reported_department_id)
+            ?.name || "Tanpa departemen / Tenant"}
+        </span>
+        <span>
           <Ticket size={16} />
           {current.category}
         </span>
@@ -474,6 +476,7 @@ function Detail({
         </span>
         <span>
           <Building2 size={16} />
+          Tujuan:{" "}
           {departments.find((d) => d.id === current.department_id)?.name}
         </span>
         <span>
@@ -601,13 +604,16 @@ function Detail({
       )}
       <section className="history">
         <h3>
-          Riwayat aktivitas <span>{logs.length}</span>
+          Percakapan request <span>{logs.length}</span>
         </h3>
         {logs.length === 0 ? (
           <p className="muted">Belum ada riwayat yang dapat ditampilkan.</p>
         ) : (
           logs.map((log) => (
-            <div className="log" key={log.id}>
+            <div
+              className={`log ${log.action === "COMMENT_ADDED" ? "chat-message" : ""} ${log.actor_id === profile.id ? "own-message" : ""}`}
+              key={log.id}
+            >
               <span className="log-dot" />
               <div>
                 <strong>
@@ -629,7 +635,7 @@ function Detail({
         )}
         <form onSubmit={addComment}>
           <label>
-            Tambahkan komentar
+            Tulis pesan
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
@@ -641,58 +647,50 @@ function Detail({
           </label>
           <button className="secondary" disabled={busy || !comment.trim()}>
             <MessageSquare size={16} />
-            Kirim komentar
+            Kirim pesan
           </button>
         </form>
       </section>
     </Modal>
   );
 }
-export default function Portal({ profile }) {
+export default function Portal({ profile, initialSection = "tickets" }) {
   const [tickets, setTickets] = useState([]),
     [departments, setDepartments] = useState([]),
     [people, setPeople] = useState([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const [modDirty, setModDirty] = useState(false);
-  const [section, setSectionValue] = useState("overview"),
-    [view, setView] = useState("table"),
-    [search, setSearch] = useState(""),
-    [department, setDepartment] = useState(""),
-    [floor, setFloor] = useState(""),
-    [status, setStatus] = useState(""),
+  const [section, setSectionValue] = useState(
+      initialSection === "overview" && canDashboard(profile.role)
+        ? "overview"
+        : "tickets",
+    ),
+    [filters, setFilters] = useState({}),
     [newTicket, setNewTicket] = useState(false),
     [selected, setSelected] = useState(null),
     [connected, setConnected] = useState(false),
     [mobile, setMobile] = useState(false),
     [revision, setRevision] = useState(0),
-    [page, setPage] = useState(1);
-  useEffect(() => {
-    const screen = window.matchMedia("(max-width: 640px)");
-    const useMobileList = () => {
-      if (screen.matches) setView("table");
-    };
-    useMobileList();
-    screen.addEventListener("change", useMobileList);
-    return () => screen.removeEventListener("change", useMobileList);
-  }, []);
+    [modDirty, setModDirty] = useState(false);
+  const generation = useRef(0);
   function setSection(next) {
+    if (next === "overview" && !canDashboard(profile.role)) return;
     if (
       section === "mod" &&
       next !== "mod" &&
       modDirty &&
-      !window.confirm("Draft MOD belum disimpan. Tinggalkan perubahan?")
+      !window.confirm("Draft checklist belum disimpan. Tinggalkan perubahan?")
     )
       return;
     setSectionValue(next);
+    setMobile(false);
   }
-  const generation = useRef(0);
   const load = useCallback(async () => {
     const seq = ++generation.current;
     try {
-      const sb = createClient();
-      const all = [];
+      const sb = createClient(),
+        all = [];
       for (let start = 0; ; start += 500) {
         const { data, error } = await sb
           .from("requests")
@@ -706,12 +704,9 @@ export default function Portal({ profile }) {
       }
       const results = await Promise.all([
         sb.from("departments").select("*").order("name"),
-        sb
-          .from("profiles")
-          .select("id,full_name,role,department_id,is_active")
-          .order("full_name"),
+        sb.rpc("member_directory"),
       ]);
-      for (const result of results) if (result.error) throw result.error;
+      for (const r of results) if (r.error) throw r.error;
       if (seq === generation.current) {
         setTickets(all);
         setDepartments(results[0].data);
@@ -750,13 +745,14 @@ export default function Portal({ profile }) {
         setConnected(state === "SUBSCRIBED");
         if (state === "SUBSCRIBED") reload();
       });
-    const poll = setInterval(load, 60000);
-    const auth = sb.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") window.location.assign("/login");
-    });
+    const poll = setInterval(load, 60000),
+      auth = sb.auth.onAuthStateChange((event) => {
+        if (event === "SIGNED_OUT") window.location.assign("/login");
+      });
     return () => {
       clearTimeout(timer);
       clearInterval(poll);
+      generation.current++;
       sb.removeChannel(channel);
       auth.data.subscription.unsubscribe();
     };
@@ -767,48 +763,41 @@ export default function Portal({ profile }) {
       return () => clearTimeout(timer);
     }
   }, [notice]);
-  useEffect(() => setPage(1), [search, department, floor, status]);
-  const filtered = tickets.filter(
-    (t) =>
-      (!department || t.department_id === department) &&
-      (!floor || t.location.startsWith(floor)) &&
-      (!status ||
-        (status === "today"
-          ? t.resolved_at &&
-            ["resolved", "closed"].includes(t.status) &&
-            jakartaDay(t.resolved_at) === jakartaDay()
-          : t.status === status)) &&
-      `${t.title} ${t.ticket_number} ${t.location}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  const stats = metrics(tickets);
   const done = (message) => {
     setNotice(message);
     load();
   };
-  const deptName = (id) =>
-    departments.find((d) => d.id === id)?.name || "Departemen";
   async function signOut() {
     const { error } = await createClient().auth.signOut({ scope: "local" });
     if (error) setError("Keluar gagal. Silakan coba lagi.");
     else window.location.assign("/login");
   }
   const items = [
-    ["overview", LayoutDashboard, "Dashboard"],
     ["tickets", Ticket, "Request"],
-    ["departments", Building2, "Departemen"],
-    ...(profile.role !== "tenant" ? [["mod", CheckCheck, "MOD"]] : []),
-    ...(profile.role === "admin" ? [["members", ShieldCheck, "Pengguna"]] : []),
+    ...(canDashboard(profile.role)
+      ? [["overview", LayoutDashboard, "Dashboard"]]
+      : []),
+    ...(profile.role !== "tenant" ? [["mod", CheckCheck, "Checklist"]] : []),
+    ...(isAdministrator(profile.role)
+      ? [["members", ShieldCheck, "Pengguna"]]
+      : []),
     ["account", UserRound, "Akun"],
   ];
+  const title = items.find((i) => i[0] === section)?.[2];
+  const description = {
+    tickets: "Request masuk dan keluar, percakapan, serta tindak lanjut tim.",
+    overview: "Pantau kebutuhan operasional dan progres penanganan departemen.",
+    mod: "Pemeriksaan area dan penanggung jawab Manager On Duty.",
+    members: "Periksa usulan pendaftar, lalu setujui atau koreksi aksesnya.",
+    account: "Kelola keamanan akun P-Ex Connect Anda.",
+  }[section];
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Langsung ke konten
       </a>
       <aside className={`sidebar ${mobile ? "open" : ""}`}>
-        <a className="brand" href="/dashboard">
+        <a className="brand" href="/request">
           <span className="brand-icon">
             <ArrowUpRight />
           </span>
@@ -817,20 +806,16 @@ export default function Portal({ profile }) {
             <small>PEKANBARU XCHANGE</small>
           </span>
         </a>
-
         <nav>
           {items.map(([key, Icon, label]) => (
             <button
               key={key}
               className={section === key ? "active" : ""}
-              onClick={() => {
-                setSection(key);
-                setMobile(false);
-              }}
+              aria-current={section === key ? "page" : undefined}
+              onClick={() => setSection(key)}
             >
-              <Icon size={19} />
+              <Icon size={21} />
               {label}
-              {key === "tickets" && <span>{tickets.length}</span>}
             </button>
           ))}
         </nav>
@@ -842,13 +827,13 @@ export default function Portal({ profile }) {
             <div>
               <strong>{profile.full_name}</strong>
               <small>
-                {profile.role} ·{" "}
+                {roles[profile.role]} ·{" "}
                 {departments.find((d) => d.id === profile.department_id)
                   ?.code || "Mall"}
               </small>
             </div>
             <button aria-label="Keluar akun" onClick={signOut}>
-              <LogOut size={17} />
+              <LogOut size={19} />
             </button>
           </div>
         </div>
@@ -871,44 +856,24 @@ export default function Portal({ profile }) {
               <Menu />
             </button>
             <span>P-Ex Connect</span>
-            <ChevronRight size={14} />
-            <strong>{items.find((i) => i[0] === section)?.[2]}</strong>
+            <ChevronRight size={16} />
+            <strong>{title}</strong>
           </div>
           <div className="topbar-right">
             <span className={`live ${connected ? "online" : ""}`}>
               <i />
               {connected ? "Terhubung" : "Sinkronisasi berkala"}
             </span>
-            <span className="topbar-date">
-              {new Intl.DateTimeFormat("id-ID", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-                timeZone: "Asia/Jakarta",
-              }).format(new Date())}
-            </span>
           </div>
         </header>
         <main className="dashboard" id="main-content">
           <div className="page-heading">
             <div>
-              <h1>{items.find((i) => i[0] === section)?.[2]}</h1>
-              <p>
-                {section === "overview"
-                  ? `Selamat bekerja, ${profile.full_name.split(" ")[0]}. Pantau dan koordinasikan kebutuhan mall hari ini.`
-                  : section === "tickets"
-                    ? "Kelola laporan dan permintaan dalam satu ruang kerja."
-                    : section === "mod"
-                      ? "Checklist area dan daftar leader MOD."
-                      : section === "members"
-                        ? "Setujui pendaftaran dan tetapkan jabatan serta departemen final setiap pengguna."
-                        : section === "account"
-                          ? "Kelola keamanan akun P-Ex Connect Anda."
-                          : "Pantau distribusi pekerjaan di setiap departemen."}
-              </p>
+              <h1>{title}</h1>
+              <p>{description}</p>
             </div>
             <button className="primary" onClick={() => setNewTicket(true)}>
-              <Plus size={18} />
+              <Plus size={20} />
               Buat request
             </button>
           </div>
@@ -920,506 +885,59 @@ export default function Portal({ profile }) {
           )}
           {notice && (
             <div className="toast" role="status">
-              <CheckCheck size={19} />
+              <CheckCheck size={20} />
               {notice}
               <button
                 aria-label="Tutup notifikasi"
                 onClick={() => setNotice("")}
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
           )}
-          {["overview", "tickets"].includes(section) && (
-            <section className="stats-grid">
-              {[
-                ["Total request", "Dalam akses Anda", Ticket, "magenta"],
-                ["Open", "Belum ditangani", Clock3, "orange"],
-                ["In Progress", "Sedang ditangani", Wrench, "blue"],
-                [
-                  "Selesai hari ini",
-                  "Terselesaikan hari ini · WIB",
-                  CheckCheck,
-                  "teal",
-                ],
-              ].map(([label, caption, Icon, color], index) => (
-                <button
-                  className={`stat-card ${color}`}
-                  key={label}
-                  onClick={() => {
-                    setSection("tickets");
-                    setStatus(["", "pending", "in_progress", "today"][index]);
-                    setDepartment("");
-                    setFloor("");
-                    setSearch("");
-                  }}
-                >
-                  <div>
-                    <span>{label}</span>
-                    <span className="stat-icon">
-                      <Icon size={19} />
-                    </span>
-                  </div>
-                  <strong>
-                    {loading ? "—" : stats[index].toLocaleString("id-ID")}
-                  </strong>
-                  <small>{caption}</small>
-                </button>
-              ))}
-            </section>
-          )}
-          {section === "overview" && (
-            <section className="overview-strip">
-              <div>
-                <span className="strip-icon">
-                  <Activity size={23} />
-                </span>
-                <div>
-                  <h3>Perlu perhatian</h3>
-                  <p>
-                    {
-                      tickets.filter(
-                        (t) =>
-                          ["pending", "in_progress"].includes(t.status) &&
-                          ["high", "emergency"].includes(t.priority),
-                      ).length
-                    }{" "}
-                    tiket prioritas tinggi atau darurat masih memerlukan
-                    perhatian.
-                  </p>
-                </div>
-              </div>
-              <button
-                className="text-button"
-                onClick={() => {
-                  setSection("tickets");
-                  setStatus("");
-                }}
-              >
-                Lihat request
-                <ArrowRight size={16} />
-              </button>
-            </section>
-          )}
-          {section === "mod" && profile.role !== "tenant" ? (
-            <ModPanel
-              profile={profile}
-              departments={departments}
-              onRequest={setNewTicket}
-              onDirty={setModDirty}
-            />
-          ) : section === "members" && profile.role === "admin" ? (
-            <Members profile={profile} departments={departments} />
-          ) : section === "account" ? (
-            <Account profile={profile} />
-          ) : section === "departments" ? (
-            <section className="department-grid">
-              {departments
-                .filter((d) => d.is_active)
-                .map((d) => {
-                  const list = tickets.filter((t) => t.department_id === d.id),
-                    open = list.filter((t) =>
-                      ["pending", "in_progress"].includes(t.status),
-                    ).length;
-                  return (
-                    <button
-                      className="department-card"
-                      key={d.id}
-                      onClick={() => {
-                        setDepartment(d.id);
-                        setSection("tickets");
-                      }}
-                    >
-                      <span className="department-code">{d.code}</span>
-                      <h3>{d.name}</h3>
-                      <p>{d.is_active ? "Departemen aktif" : "Tidak aktif"}</p>
-                      <div>
-                        <strong>{open}</strong>
-                        <span>tiket terbuka</span>
-                        <ArrowUpRight size={20} />
-                      </div>
-                    </button>
-                  );
-                })}
-            </section>
+          {loading ? (
+            <div className="empty">
+              <LoaderCircle className="spin" />
+              <h3>Memuat ruang kerja...</h3>
+            </div>
           ) : (
             <>
-              <section className="tracker">
-                <div className="tracker-heading">
-                  <div>
-                    <h2>
-                      {section === "overview"
-                        ? "Monitor tiket"
-                        : "Daftar tiket"}
-                      <span>{filtered.length}</span>
-                    </h2>
-                    <p>Laporan terkini dan progres penanganan tim.</p>
-                  </div>
-                  <div className="view-toggle">
-                    <button
-                      className={view === "table" ? "selected" : ""}
-                      aria-label="Tampilan tabel"
-                      onClick={() => setView("table")}
-                    >
-                      <List size={16} />
-                      Tabel
-                    </button>
-                    <button
-                      className={view === "kanban" ? "selected" : ""}
-                      aria-label="Tampilan kanban"
-                      onClick={() => setView("kanban")}
-                    >
-                      <LayoutGrid size={16} />
-                      Papan
-                    </button>
-                  </div>
-                </div>
-                <div className="status-tabs" aria-label="Status request">
-                  {[["", "Semua"], ...Object.entries(statuses)].map(
-                    ([key, label]) => (
-                      <button
-                        key={key}
-                        className={status === key ? "selected" : ""}
-                        aria-pressed={status === key}
-                        onClick={() => setStatus(key)}
-                      >
-                        {label}
-                        <span>
-                          {
-                            tickets.filter(
-                              (t) =>
-                                (!department ||
-                                  t.department_id === department) &&
-                                (!floor || t.location.startsWith(floor)) &&
-                                (!key || t.status === key) &&
-                                `${t.title} ${t.ticket_number} ${t.location}`
-                                  .toLowerCase()
-                                  .includes(search.toLowerCase()),
-                            ).length
-                          }
-                        </span>
-                      </button>
-                    ),
-                  )}
-                </div>
-                <div className="filters">
-                  <div className="search-input">
-                    <Search size={17} />
-                    <input
-                      aria-label="Cari tiket"
-                      placeholder="Cari nomor, judul, atau lokasi..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </div>
-                  <select
-                    aria-label="Filter departemen"
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                  >
-                    <option value="">Semua departemen</option>
-                    {departments
-                      .filter(
-                        (d) =>
-                          d.is_active ||
-                          tickets.some((t) => t.department_id === d.id),
-                      )
-                      .map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                  </select>
-                  <select
-                    aria-label="Filter lantai"
-                    value={floor}
-                    onChange={(e) => setFloor(e.target.value)}
-                  >
-                    <option value="">Semua area</option>
-                    {locations.map((l) => (
-                      <option key={l}>{l}</option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="Filter status"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                  >
-                    <option value="">Semua status</option>
-                    <option value="today">Selesai hari ini</option>
-                    {Object.entries(statuses).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    className="icon-button"
-                    aria-label="Muat ulang tiket"
-                    onClick={load}
-                  >
-                    <RefreshCw size={17} />
-                  </button>
-                </div>
-                {loading ? (
-                  <div className="empty">
-                    <LoaderCircle className="spin" />
-                    <h3>Memuat ruang kerja...</h3>
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div className="empty">
-                    <span>
-                      <Ticket size={29} />
-                    </span>
-                    <h3>
-                      {tickets.length
-                        ? "Tidak ada tiket yang cocok"
-                        : "Belum ada request"}
-                    </h3>
-                    <p>
-                      {tickets.length
-                        ? "Coba ubah pencarian atau filter Anda."
-                        : "Tekan Buat request untuk melaporkan kebutuhan."}
-                    </p>
-                    {tickets.length ? (
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          setSearch("");
-                          setDepartment("");
-                          setFloor("");
-                          setStatus("");
-                        }}
-                      >
-                        Reset filter
-                      </button>
-                    ) : (
-                      <button
-                        className="primary"
-                        onClick={() => setNewTicket(true)}
-                      >
-                        <Plus size={16} />
-                        Buat request pertama
-                      </button>
-                    )}
-                  </div>
-                ) : view === "table" ? (
-                  <>
-                    <div className="mobile-tickets">
-                      {filtered.slice((page - 1) * 12, page * 12).map((t) => (
-                        <button
-                          className="mobile-ticket"
-                          key={t.id}
-                          onClick={() => setSelected(t)}
-                        >
-                          <div className="mobile-ticket-head">
-                            <small>{t.ticket_number}</small>
-                            <Badge value={t.status} />
-                          </div>
-                          <h3>{t.title}</h3>
-                          <p>
-                            <MapPin size={17} />
-                            {t.location}
-                          </p>
-                          <p>
-                            <Building2 size={17} />
-                            {deptName(t.department_id)}
-                          </p>
-                          <div className="mobile-ticket-foot">
-                            <Badge value={t.priority} priority />
-                            <span>{fmt(t.created_at)}</span>
-                            <ChevronRight size={20} />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="table-scroll desktop-tickets">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>TIKET / LAPORAN</th>
-                            <th>LOKASI</th>
-                            <th>DEPARTEMEN</th>
-                            <th>PRIORITAS</th>
-                            <th>STATUS</th>
-                            <th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filtered
-                            .slice((page - 1) * 12, page * 12)
-                            .map((t) => (
-                              <tr key={t.id}>
-                                <td>
-                                  <button
-                                    className="ticket-title"
-                                    onClick={() => setSelected(t)}
-                                  >
-                                    <small>{t.ticket_number}</small>
-                                    <strong>{t.title}</strong>
-                                    <span>{fmt(t.created_at)} WIB</span>
-                                  </button>
-                                </td>
-                                <td>
-                                  <span className="location-text">
-                                    <MapPin size={14} />
-                                    {t.location}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span className="dept-label">
-                                    {deptName(t.department_id)}
-                                  </span>
-                                </td>
-                                <td>
-                                  <Badge value={t.priority} priority />
-                                </td>
-                                <td>
-                                  <Badge value={t.status} />
-                                </td>
-                                <td>
-                                  <button
-                                    className="icon-button"
-                                    aria-label={`Buka ${t.ticket_number}`}
-                                    onClick={() => setSelected(t)}
-                                  >
-                                    <ChevronRight size={17} />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="pagination">
-                      <span>
-                        Menampilkan {(page - 1) * 12 + 1}–
-                        {Math.min(page * 12, filtered.length)} dari{" "}
-                        {filtered.length} tiket
-                      </span>
-                      <div>
-                        <button
-                          className="secondary"
-                          disabled={page === 1}
-                          onClick={() => setPage((p) => p - 1)}
-                        >
-                          Sebelumnya
-                        </button>
-                        <button
-                          className="secondary"
-                          disabled={page * 12 >= filtered.length}
-                          onClick={() => setPage((p) => p + 1)}
-                        >
-                          Berikutnya
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="kanban">
-                    {Object.entries(statuses).map(([s, label]) => (
-                      <div className="kanban-column" key={s}>
-                        <h3>
-                          <span className={`status-dot ${s}`} />
-                          {label}
-                          <span>
-                            {filtered.filter((t) => t.status === s).length}
-                          </span>
-                        </h3>
-                        {filtered
-                          .filter((t) => t.status === s)
-                          .map((t) => (
-                            <button
-                              className="kanban-card"
-                              key={t.id}
-                              onClick={() => setSelected(t)}
-                            >
-                              <div>
-                                <small>{t.ticket_number}</small>
-                                <Badge value={t.priority} priority />
-                              </div>
-                              <h4>{t.title}</h4>
-                              <p>
-                                <MapPin size={13} />
-                                {t.location}
-                              </p>
-                              <footer>
-                                <span>{deptName(t.department_id)}</span>
-                                <ChevronRight size={16} />
-                              </footer>
-                            </button>
-                          ))}
-                        {!filtered.some((t) => t.status === s) && (
-                          <p className="kanban-empty">Belum ada tiket</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-              {section === "overview" && (
-                <section className="department-summary">
-                  <h2>Ringkasan departemen</h2>
-                  <p>Jumlah request yang dapat Anda akses.</p>
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Departemen</th>
-                          <th>Open</th>
-                          <th>In Progress</th>
-                          <th>Resolved / Closed</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {departments
-                          .filter((d) => d.is_active)
-                          .map((d) => {
-                            const rows = tickets.filter(
-                              (t) => t.department_id === d.id,
-                            );
-                            return (
-                              <tr key={d.id}>
-                                <td>
-                                  <button
-                                    className="text-button"
-                                    onClick={() => {
-                                      setDepartment(d.id);
-                                      setStatus("");
-                                      setSection("tickets");
-                                    }}
-                                  >
-                                    {d.name}
-                                  </button>
-                                </td>
-                                <td>
-                                  {
-                                    rows.filter((t) => t.status === "pending")
-                                      .length
-                                  }
-                                </td>
-                                <td>
-                                  {
-                                    rows.filter(
-                                      (t) => t.status === "in_progress",
-                                    ).length
-                                  }
-                                </td>
-                                <td>
-                                  {
-                                    rows.filter((t) =>
-                                      ["resolved", "closed"].includes(t.status),
-                                    ).length
-                                  }
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+              {section === "tickets" && (
+                <RequestTracker
+                  tickets={tickets}
+                  departments={departments}
+                  people={people}
+                  profile={profile}
+                  filters={filters}
+                  setFilters={setFilters}
+                  onOpen={setSelected}
+                  onRefresh={load}
+                />
               )}
+              {section === "overview" && canDashboard(profile.role) && (
+                <OperationsDashboard
+                  tickets={tickets}
+                  departments={departments}
+                  profile={profile}
+                  onDrill={(next) => {
+                    setFilters(next);
+                    setSection("tickets");
+                  }}
+                  onOpen={setSelected}
+                />
+              )}
+              {section === "mod" && profile.role !== "tenant" && (
+                <ModPanel
+                  profile={profile}
+                  departments={departments}
+                  onDirty={setModDirty}
+                  onRequest={setNewTicket}
+                />
+              )}
+              {section === "members" && isAdministrator(profile.role) && (
+                <Members profile={profile} departments={departments} />
+              )}{" "}
+              {section === "account" && <Account profile={profile} />}
             </>
           )}
           <footer className="dashboard-footer">
@@ -1431,26 +949,34 @@ export default function Portal({ profile }) {
       </div>
       <nav className="bottom-nav" aria-label="Navigasi utama">
         {[
-          ["overview", LayoutDashboard, "Dashboard"],
           ["tickets", Ticket, "Request"],
           ["new", Plus, "Buat"],
-          profile.role === "tenant"
-            ? ["account", UserRound, "Akun"]
-            : ["mod", CheckCheck, "MOD"],
+          ...(canDashboard(profile.role)
+            ? [["overview", LayoutDashboard, "Dashboard"]]
+            : []),
+          profile.role !== "tenant"
+            ? ["mod", CheckCheck, "Checklist"]
+            : ["account", UserRound, "Akun"],
+          ...(!canDashboard(profile.role) && profile.role !== "tenant"
+            ? [["account", UserRound, "Akun"]]
+            : []),
         ].map(([key, Icon, label]) => (
           <button
             key={key}
-            aria-current={section === key ? "page" : undefined}
             className={section === key ? "active" : ""}
+            aria-current={section === key ? "page" : undefined}
             onClick={() =>
               key === "new" ? setNewTicket(true) : setSection(key)
             }
           >
-            <Icon size={22} />
+            <Icon size={23} />
             <span>{label}</span>
           </button>
         ))}
       </nav>
+      {!mobile && !newTicket && !selected && profile.role !== "tenant" && (
+        <DutyCard onOpen={() => setSection("mod")} />
+      )}
       {newTicket && (
         <NewTicket
           departments={departments}
@@ -1458,7 +984,7 @@ export default function Portal({ profile }) {
           close={() => setNewTicket(false)}
           done={done}
         />
-      )}{" "}
+      )}
       {selected && (
         <Detail
           ticket={selected}

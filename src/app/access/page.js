@@ -14,7 +14,7 @@ export default async function Access() {
     throw new Error(
       "Status akses belum dapat dimuat. Coba lagi atau hubungi administrator.",
     );
-  if (data.status === "active") redirect("/dashboard");
+  if (data.status === "active") redirect("/request");
   return (
     <Registration
       accessState={data}

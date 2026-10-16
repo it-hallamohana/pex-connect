@@ -1,4 +1,5 @@
 "use client";
+import JobTitleField from "@/components/job-title-field";
 import AuthBackdrop from "@/components/auth-backdrop";
 import { useState } from "react";
 import {
@@ -11,11 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
-import {
-  departmentOptions,
-  jobTitles,
-  registrationValues,
-} from "@/lib/registration.mjs";
+import { departmentOptions, registrationValues } from "@/lib/registration.mjs";
 
 export function RegistrationFields({ defaults = {} }) {
   const [kind, setKind] = useState(defaults.p_account_type || "staff");
@@ -74,23 +71,7 @@ export function RegistrationFields({ defaults = {} }) {
           </select>
         </label>
       </div>
-      <label>
-        Jabatan yang diajukan *
-        <input
-          name="job_title"
-          list="registration-jobs"
-          required
-          minLength={2}
-          maxLength={100}
-          defaultValue={defaults.p_job_title || ""}
-          placeholder="Contoh: Supervisor atau Teknisi"
-        />
-        <datalist id="registration-jobs">
-          {jobTitles.map((j) => (
-            <option key={j} value={j} />
-          ))}
-        </datalist>
-      </label>
+      <JobTitleField defaultValue={defaults.p_job_title || ""} />
       {kind === "tenant" && (
         <div className="form-grid">
           <label>

@@ -20,8 +20,8 @@ Buka http://127.0.0.1:3005. `npm run build` menghasilkan build standalone dan `n
 - Tidak ada query atau DDL terhadap tabel schema `public`. Tidak ada trigger pada `auth.users`.
 - Registrasi tersedia pada `/register`. Pendaftar masuk ke `mall.registration_requests` dengan status pending; akses operasional baru aktif setelah admin menyetujui dan membuat keanggotaan di `mall.profiles`. Tidak ada sinkronisasi otomatis seluruh akun hotel.
 - Cookie bernama `pex-mall-auth` memisahkan sesi aplikasi ini dari aplikasi lain dalam project yang sama. Logout memakai scope lokal.
-- Admin melihat dan mengelola seluruh tiket. Supervisor/staf melihat tiket departemennya dan tiket yang dilaporkan sendiri. Tenant hanya melihat tiketnya sendiri.
-- Hanya admin/supervisor yang boleh menentukan petugas dan menutup/menolak tiket. Petugas harus aktif dan berada di departemen tujuan.
+- Admin/Executive melihat dan mengelola seluruh tiket. Assistant Manager/Manager melihat semua departemen, tetapi menangani tiket departemen tujuannya sendiri. Supervisor/staf melihat request yang dikirim oleh atau ditujukan ke departemennya. Tenant hanya melihat tiketnya sendiri.
+- Penugasan dan penutupan/penolakan memerlukan Supervisor ke atas serta hak menangani tiket tersebut. Petugas harus aktif dan berada di departemen tujuan. Departemen pengirim disimpan saat tiket dibuat, sehingga perpindahan staf tidak mengubah asal riwayat.
 - Penulisan tiket hanya melalui RPC yang memvalidasi otorisasi. Client tidak diberi izin INSERT/UPDATE/DELETE pada tabel; log audit dibuat oleh fungsi tersebut dalam transaksi yang sama.
 - RLS berlaku pada semua tabel Mall. Fungsi privileged menggunakan search_path kosong, pemeriksaan auth.uid dan profil aktif, serta EXECUTE terbatas. Helper membership mengembalikan hanya identitas pemanggil; tidak menerima user ID arbitrer.
 - Foto disimpan pada bucket privat `mall-attachments`. Kolom `photo_url` dan `resolution_photo_url` berisi **object path**, bukan URL publik atau URL bertanda tangan yang akan kedaluwarsa.
@@ -43,11 +43,11 @@ Gunakan alur registrasi dan menu **Pengguna** untuk operasional sehari-hari:
 
 1. Calon pengguna mengisi nama, email, kata sandi, telepon, jenis pengguna, **departemen yang diajukan**, dan **jabatan yang diajukan** di `/register`. Akun Auth perusahaan yang sudah ada cukup login, lalu mengajukan akses dari `/access`.
 2. Jika konfigurasi Auth mewajibkan verifikasi email, pengguna perlu memverifikasi email terlebih dahulu, kemudian login dan mengirim permohonan dari `/access`. Konfigurasi Auth project bersama tidak diubah aplikasi ini.
-3. Admin membuka **Pengguna → Pendaftaran**. Departemen yang diajukan ditampilkan sebagai referensi. Admin **wajib memilih departemen final secara eksplisit**, termasuk ketika sama dengan usulan pendaftar, kemudian menetapkan jabatan final dan peran akses.
+3. Admin/Executive membuka **Pengguna → Pendaftaran**. Departemen dan jabatan final sudah terisi dari usulan pendaftar; level akses disarankan berdasarkan jabatan. Periksa lalu setujui, atau ubah jika keliru. Jabatan memakai dropdown dan opsi **Lainnya** untuk isian khusus.
 4. Klik **Setujui dan aktifkan**, atau **Tolak** disertai alasan minimal 5 karakter. Pendaftar dapat memeriksa status, membaca catatan penolakan, dan mengajukan ulang.
 5. Setelah persetujuan, admin tetap dapat mengubah departemen, jabatan, peran, atau status aktif melalui tab **Pengguna**. Menonaktifkan anggota hanya mencabut akses Mall, tanpa menonaktifkan akun Auth perusahaan.
 
-Jabatan adalah label organisasi (contoh: General Manager, Chief Engineering, Supervisor, Teknisi). Peran akses tetap `admin`, `supervisor`, `staff`, atau `tenant`. Jabatan tidak otomatis meningkatkan izin pengguna. Admin tidak dapat menonaktifkan atau menurunkan peran adminnya sendiri.
+Jabatan adalah label organisasi. Peran akses: `admin`, `executive`, `manager`, `assistant_manager`, `supervisor`, `staff`, `tenant`. Executive ditujukan untuk GM Mall, Superadmin, dan HQ; memiliki administrasi pengguna seperti admin. Usulan jabatan tidak memberi akses sebelum persetujuan. Jabatan khusus yang belum dikenali disarankan sebagai staf, lalu diverifikasi admin. Admin/Executive tidak dapat mencabut akses administrasinya sendiri.
 
 Persetujuan dan perubahan anggota dicatat di `mall.member_logs`. Data usulan departemen tetap disimpan, terpisah dari departemen final pada profil. Pembaruan menggunakan pemeriksaan versi dan transaksi untuk mencegah dua admin menimpa keputusan satu sama lain. Gunakan **Muat ulang** untuk mengambil antrean terkini; form tidak melakukan refresh otomatis agar isian admin tidak hilang.
 
@@ -66,17 +66,18 @@ FROM auth.users u CROSS JOIN mall.departments d
 WHERE lower(u.email) = lower('staf@example.com') AND d.code = 'ENG';
 ```
 
-Role yang tersedia: `admin`, `supervisor`, `staff`, `tenant`. Staf dan supervisor wajib memiliki departemen. Tenant dapat memiliki `tenant_name` dan `unit_number`. Menonaktifkan `mall.profiles.is_active` mencabut akses data Mall pada permintaan berikutnya tanpa mengubah akun hotel. Jangan menghapus akun Auth bersama untuk sekadar menonaktifkan akses Mall.
+Staf, Supervisor, Assistant Manager, dan Manager wajib memiliki departemen. Tenant memiliki `tenant_name` dan `unit_number`. Menonaktifkan `mall.profiles.is_active` mencabut akses data Mall pada permintaan berikutnya tanpa mengubah akun hotel. Jangan menghapus akun Auth bersama untuk sekadar menonaktifkan akses Mall.
 
 Untuk akun Auth baru, buat melalui Dashboard/Auth Admin API. Sebelum provisioning di masa depan, periksa kembali apakah terdapat trigger Auth baru yang otomatis menulis ke sistem hotel. Saat admin pertama dibuat, pemeriksaan metadata tidak menemukan trigger aplikasi pada `auth.users`.
 
 ## Alur penggunaan
 
-1. Login menggunakan akun Mall. Ubah kata sandi awal pada menu **Akun**.
+1. Login menggunakan akun Mall. Halaman awal langsung **Request** (`/request`), termasuk sesi yang masih tersimpan. Ubah kata sandi awal pada menu **Akun**.
 2. **Buat tiket**: judul, kategori, departemen, area/lokasi, prioritas, deskripsi, dan foto opsional.
 3. Buka tiket untuk penugasan, komentar, dan perubahan status.
-4. Alur normal: Menunggu → Dikerjakan → Terselesaikan → Ditutup. Penyelesaian wajib catatan minimal 5 karakter dan foto. Supervisor/admin dapat menolak tiket Menunggu disertai alasan, atau membuka kembali tiket Terselesaikan ke Dikerjakan.
+4. Alur normal: Open → In Progress → Resolved → Closed. Penyelesaian wajib catatan minimal 5 karakter dan foto. Supervisor ke atas dengan hak menangani tiket dapat menolak Open disertai alasan. Resolved dapat dibuka kembali ke In Progress.
 5. Gunakan filter, pencarian, tabel, atau Board. Klik kartu Board untuk mengubah status menggunakan dropdown.
+6. **Dashboard** hanya untuk Supervisor ke atas, dilindungi juga pada route server. Grafik departemen pengirim/tujuan, kategori, status, tren tanggal, dan request aktif tertua menggunakan data sesuai RLS. Klik grafik untuk membuka daftar dengan filter yang sama, kemudian pilih request untuk masuk ke percakapan. Filter tanggal berdasarkan tanggal request dibuat dalam WIB; kartu Selesai mencakup Resolved dan Closed pada periode itu.
 
 Realtime memantau channel `mall:operations:<user-id>` untuk tabel Mall. Saat koneksi kembali, data dimuat ulang. Polling 60 detik menjadi fallback. Riwayat detail juga diperbarui; formulir aktif mempertahankan versi tiket sehingga konflik akan meminta pengguna **Muat terbaru**.
 
@@ -104,11 +105,13 @@ Referensi: [Supabase custom schemas](https://supabase.com/docs/guides/api/using-
 
 Daftar hotel pada migrasi sebelumnya telah diganti oleh `20261014141836_mall_source_catalog_mod.sql`. Sumber: [Checklist PX - Connect](https://docs.google.com/spreadsheets/d/1oUImJKAI1KMF-CMBnnFR7QxbtBWwm-SyhB3MVyYCI5I/edit?gid=1457178504), tab MOD, Operasional Mall, dan Leader Photo.
 
-Enam divisi operasional: General Affair, Human Resource, Legal Department, Engineering, Marketing, Marcomm; MOD ditambahkan untuk penempatan petugas pemeriksaan. Subarea House Keeping, Security, dan Customer Service berada pada General Affair. Departemen terdahulu dinonaktifkan, bukan dihapus, sehingga relasi profil dan riwayat tetap utuh. Admin dapat memindahkan pengguna lama melalui menu Pengguna.
+Enam divisi operasional: General Affair, Human Resource, Legal Department, Engineering, Marketing, Marcomm. MOD adalah tugas Manager On Duty, bukan jabatan akses atau departemen. Departemen MOD dari versi sebelumnya dinonaktifkan. Subarea House Keeping, Security, dan Customer Service berada pada General Affair. Referensi historis tetap utuh. Admin dapat memindahkan pengguna lama melalui menu Pengguna; menu Departemen tersendiri sudah digabung ke monitoring Dashboard.
 
 Form request memilih departemen, area operasional, lalu kebutuhan dari spreadsheet. Customer Service tidak memiliki butir kebutuhan pada dokumen, sehingga hanya menyediakan Lainnya. Lokasi/zona mengacu pada tab MOD. Tidak ada lagi judul request hotel. Data katalog tersimpan di `src/lib/mall-catalog.mjs`; pembaruan spreadsheet tidak tersinkron otomatis.
 
-Menu MOD menampilkan 7 leader dan 117 butir pemeriksaan. Admin, supervisor, dan staf departemen MOD dapat membuat pemeriksaan dan menyimpan draft. Semua butir harus dijawab (Baik, Perlu tindak lanjut, atau Tidak berlaku) sebelum dikirim; temuan wajib diberi catatan. Hasil terkirim tidak dapat diedit. Admin dapat membaca semua hasil; pengisi hanya dapat membaca/memperbarui miliknya sendiri. Pemilihan leader adalah label penanggung jawab pemeriksaan, tidak memberikan role atau membuat akun Auth. Tidak ada jadwal piket otomatis karena sumber tidak memuat jadwal.
+Menu **Checklist** menyediakan satu jenis: MOD, dengan 7 leader dan 117 butir pemeriksaan. Assistant Manager ke atas dapat membuat pemeriksaan dan menetapkan jadwal harian; mereka dapat membaca semua hasil, tetapi hanya mengubah draft sendiri. Semua butir wajib dijawab (Baik, Perlu tindak lanjut, atau Tidak berlaku); temuan wajib catatan. Hasil terkirim tidak dapat diedit. Pemilihan leader tidak memberikan role atau membuat akun Auth.
+
+Popup kanan bawah menampilkan leader yang on duty hari ini, memakai tanggal WIB dan foto privat. Jadwal ditetapkan melalui Checklist; jika belum ada, tampil **Belum ditetapkan**. Checklist yang dikirim dapat mengisi jadwal kosong untuk tanggal tersebut; leader harus sesuai jika jadwal sudah ada. Popup diperbarui setiap 30 detik dan setelah jadwal disimpan, serta dapat diperkecil pada mobile. Tidak ada jadwal yang dikarang dari daftar leader.
 
 Tombol Buat request tindak lanjut membuka formulir dengan judul, lokasi, dan catatan temuan; pengguna memilih divisi/area tujuan lalu mengirim request. Draft checklist disimpan terpisah.
 
@@ -116,4 +119,6 @@ Foto leader diekstrak dari posisi gambar pada tab Leader Photo dan disimpan priv
 
 Label Open memakai nilai internal `pending`, agar kompatibel dengan tiket/RPC lama. Data dashboard tetap mengikuti RLS. Login dan registrasi memiliki background ilustrasi garis atrium, dengan kartu formulir putih dan tipografi utama 16px.
 
-Urutan migrasi: init schema, attachment validation, registration approval, foxi_departments (historis), lalu source_catalog_mod (acuan terbaru). Jangan menjalankan kembali migrasi foxi_departments setelah source_catalog_mod. Seluruh objek bisnis tetap di schema `mall`; schema `public` dan bucket hotel tidak disentuh.
+Urutan migrasi: init schema, attachment validation, registration approval, foxi_departments (historis), source_catalog_mod, `20261016072143_mall_access_dashboard_duty.sql`, lalu `20261016081240_mall_profile_privacy.sql`. Dua migrasi terakhir memperluas role, menyimpan departemen pengirim, memperbarui RLS/RPC persetujuan, menambahkan jadwal MOD, dan membatasi akses kontak profil tenant ke profilnya sendiri. Direktori nama petugas tidak memuat email/telepon. Jangan menjalankan kembali migrasi lama atau push/reset massal pada project bersama. Seluruh objek bisnis tetap di schema `mall`; schema `public` dan bucket hotel tidak disentuh.
+
+`tests/access-workflow.test.mjs` menguji seluruh rangkaian migrasi, akses pengirim/penerima, perpindahan departemen, perlindungan kenaikan role, approval tanpa mengetik ulang, kewenangan Executive, penugasan MOD, konflik versi, serta kesesuaian grafik dengan filter riwayat.

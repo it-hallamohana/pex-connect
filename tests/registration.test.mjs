@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { departmentOptions } from "../src/lib/registration.mjs";
+import { mallCatalog } from "../src/lib/mall-catalog.mjs";
+const departmentOptions = mallCatalog.departments;
 import { PGlite } from "@electric-sql/pglite";
 
 test("registration, admin verification, department override, rejection/resubmission, member management and RLS", async () => {
